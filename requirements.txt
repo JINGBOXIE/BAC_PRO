@@ -1,0 +1,4 @@
+pymysql
+pandas
+matplotlib
+numpy
