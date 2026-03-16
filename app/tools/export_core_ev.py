@@ -12,9 +12,11 @@ def export_data():
             database="BAC_PRO"
         )
         print("正在从 MySQL 提取核心 EV 数据...")
-        
-        # 提取前 5000 条最常出现的状态
-        query = "SELECT * FROM premax_state_ev ORDER BY n_ge DESC LIMIT 5000"
+        # 建议修改 SQL 逻辑，确保存储了所有常见长度
+
+        # 确保包含了常见的短连和长连
+        query = "SELECT * FROM premax_state_ev WHERE cur_len <= 12 OR n_ge > 500000 ORDER BY n_ge DESC LIMIT 8000"
+
         df = pd.read_sql(query, conn)
         
         # 保存压缩文件
