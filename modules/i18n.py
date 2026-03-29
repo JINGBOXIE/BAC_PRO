@@ -2,6 +2,7 @@
 
 TRANSLATIONS = {
     "CN": {
+        "new_shoe": "开启新靴",
         "nav_practice": "🧠 策略训练",
         "nav_ai": "⚡ AI 实战分析",
         "nav_knowledge": "📖 百家乐常识",
@@ -19,6 +20,7 @@ TRANSLATIONS = {
         "big_road": "大路演示",
     },
     "EN": {
+        "new_shoe": "New Shoe",
         "nav_practice": "🧠 Strategy Drill",
         "nav_ai": "⚡ AI Live Vision",
         "nav_knowledge": "📖 Knowledge Base",
