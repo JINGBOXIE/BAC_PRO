@@ -364,35 +364,42 @@ class FullSBIModel:
     # ------------------------------------------------------------------
     # 偏向标签：用于 UI 显示
     # ------------------------------------------------------------------
+# --- 在 FullSBIModel 类中修改这个方法 ---
+
     def bias_label(self) -> str:
-        """
-        给出一个简化标签，描述当前鞋结构的偏向：
-          - "P+" / "B+" / "Neutral"
-        阈值可以视需求微调。
-        """
-        s_p = self.sbi_p()
-        s_b = self.sbi_b_comm()
+            """
+            实战显著性判定逻辑：
+            只有当 P/B 差距突破显著性门槛时，才发出 P+ 或 B+ 信号。
+            """
+            p_final = self.ev_p()
+            b_final = self.ev_b_comm()
+            delta = p_final - b_final
+            
+            # 💡 这里是你控制“参考价值”的核心参数
+            # 0.002 代表 0.2% 的净偏移门槛。低于此值的波动均视为 Neutral (绿色)
+            SIG_THRESHOLD = 0.002 
+            
+            if delta > SIG_THRESHOLD:
+                return "P+"
+            elif delta < -SIG_THRESHOLD:
+                return "B+"
+            else:
+                # 在门槛内，系统保持绿色 Neutral，代表当前牌组结构平衡，无明显偏向
+                return "Neutral"
 
-        # 简单规则：哪边结构 EV 更高，就认为偏向哪边
-        # 这里采用一个非常保守的阈值，避免轻易给出强烈偏向信号
-        if s_p - s_b > 0.0005:
-            return "P+"
-        elif s_b - s_p > 0.0005:
-            return "B+"
-        else:
-            return "Neutral"
-
-
-# ----------------------------------------------------------------------
-# 兼容 APP 的简易调用入口（不破坏 V6 既有接口）
-# ----------------------------------------------------------------------
-def compute_sbi_ev_from_counts(total_decks: int, rank_counts: Dict[int, int]) -> Dict[str, float]:
+# --- 修改兼容调用入口，确保输出 Delta 给 UI 使用 ---
+def compute_sbi_ev_from_counts(total_decks: int, rank_counts: Dict[int, int]) -> Dict:
     """从 (total_decks, rank_counts) 直接得到结构 EV 偏移。"""
     model = FullSBIModel(total_decks=total_decks, rank_counts=rank_counts)
+    
+    s_p = model.sbi_p()
+    s_b = model.sbi_b_comm()
+    
     return {
-        "sbi_p": model.sbi_p(),
-        "sbi_b_comm": model.sbi_b_comm(),
+        "sbi_p": s_p,
+        "sbi_b_comm": s_b,
         "ev_p": model.ev_p(),
         "ev_b_comm": model.ev_b_comm(),
+        "delta": s_p - s_b,          # 💡 新增：方便 UI 直接显示差距
         "bias_label": model.bias_label(),
     }

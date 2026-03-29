@@ -1,3 +1,16 @@
+# 忽略 Python 虚拟环境
+venv/
+ENV/
+env/
+
+# 忽略缓存文件
 __pycache__/
-*.log
+*.pyc
 .DS_Store
+
+# 忽略 IDE 配置
+.vscode/
+.idea/
+
+# 忽略系统文件
+.ipynb_checkpoints

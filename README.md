@@ -1,31 +1,36 @@
-# BAC_PRO (Baccarat Professional Analysis Engine)
+# 🃏 BACC-INTELLI: 全域决策矩阵工程文档
 
-这是一个基于 Python 开发的百家乐概率模拟与实时分析系统，支持 10 亿手（1e9）级别的模拟数据处理。
+## 📌 项目概述
+BACC-INTELLI 是一款集成“实战模拟”、“资金管理”与“AI 势能分析”的高级百家乐分析系统。系统通过 Rank Bias (点数偏移) 与 Snapshot Bias (图形势能) 双引擎驱动，提供科学的决策支持。
 
-## 核心功能
-* **模拟计算**：通过 `pipeline` 模块进行大规模数据采样。
-* **实时策略**：`app` 模块提供基于 `premax_state_ev` 表的最优动作建议。
-* **视觉识别**：内置 `vision_scanner` 用于牌局状态自动输入。
+## 📂 目录结构说明
 
-## 快速开始
+### 🛰️ 调度层 (Action Layer)
+* **`streamlit_app.py`**: 系统指挥中心。处理 UI 交互、文件上传（拍照识别接口）、以及各模块间的调度。
 
-### 1. 安装依赖
-确保已安装 Python 3.8+，然后在项目根目录执行：
-```bash
-pip install -r requirements.txt
-```
+### 🎴 发牌物理层 (Dealer Layer)
+* **`dealer/baccarat_dealer.py`**: **[逻辑已锁定]** 负责 8 叠牌的洗牌、发牌规则（含补牌逻辑）及结果生成。
 
-### 2. 数据库配置
-项目依赖 MySQL 存储模拟结果。请运行以下脚本初始化核心表结构：
-```bash
-# 建议先根据你的本地环境修改脚本中的 DB_PASSWORD
-python3 app/tools/insert_streak_raw.py 
-```
-*(注：由于你删除了旧的初始化脚本，建议未来将核心表 `premax_state_ev` 的建表语句也放入此处。)*
+### 📦 公开功能模块 (Modules)
+* **`road_renderer.py`**: 负责大路图渲染，包含长龙下拐与 HTML/JS 自动对焦逻辑。
+* **`stats_manager.py`**: 负责实时 Rank 计数（0-9 剩余张数）及基础统计。
+* **`bankroll_engine.py`**: 负责本金追踪、流水记录及胜负自动结算。
 
-## 目录指南
-* `app/`: UI 界面与核心逻辑
-* `core/`: 数据库适配器与视觉扫描核心
-* `dealer/`: 发牌逻辑模拟
-* `drawing/`: 期望值（EV）曲线绘图工具
+### 🛡️ 核心机密层 (Protected Core)
+> **注意：此目录下的 `.py` 文件在发布前必须编译为 `.pyd` 混淆文件。**
+* **`core/snapshot_proxy.py`**: 外部接口代理，屏蔽内部核心算法。
+* **`core/engine_source.py`**: **核心资产**。包含图形特征哈希化算法及 Snapshot 匹配逻辑。
+* **`core/data_vault/`**: 加密仓库。
+    * `snapshot_bias.bin`: 经 AES-256 加密的图形 EV 预计算字典。
 
+---
+
+## 🔐 安全协议 (Security Protocol)
+1. **资产隔离**: 严禁在 `streamlit_app.py` 中直接编写图形识别逻辑。
+2. **内存加密**: `snapshot_bias.bin` 仅在运行时解密至内存字典，禁止生成任何中间明文文件。
+3. **哈希查询**: 所有图形状态必须转换为 `StateID` (Hash) 后再进行字典检索，确保数据不可逆向。
+
+## 🚀 未来扩展计划
+- [ ] **Vision Module**: 接入 OpenCV，实现路纸照片自动识别。
+- [ ] **Bias Engine v2**: 接入海量预计算的 Snapshot EV 表。
+- [ ] **Bankroll Chart**: 实时生成资金曲线图。

@@ -50,50 +50,56 @@ class SnapshotDBWriter:
         except Exception:
             pass
 
-    def add_state(
-        self,
-        *,
-        state_key: str,
-        cur_side: str,
-        cur_len: int,
-        hist_b_json: str,
-        hist_p_json: str,
-        hist_hb: int,
-        hist_hp: int,
-    ):
-        h = sha256_hex(state_key)
-        row = self.buffer.get(h)
-        if row is None:
-            self.buffer[h] = (cur_side, cur_len, hist_b_json, hist_p_json, 1, hist_hb, hist_hp)
+    def add_state(self, state_key, cur_side, cur_len, hist_b_json, hist_p_json, hist_hb, hist_hp):
+        # 生成唯一哈希（如果传入的 state_key 还没有哈希化）
+        import hashlib
+        state_hash = hashlib.sha256(state_key.encode()).hexdigest()
+        
+        # 严格按照 SQL 顺序构建元组：6个字段
+        # 对应：state_hash, cur_side, cur_len, cnt (初始化为1), sum_hist_hb, sum_hist_hp
+        if state_hash in self.buffer:
+            # 如果缓冲区已存在，累加数值
+            prev = self.buffer[state_hash]
+            self.buffer[state_hash] = (
+                state_hash,    # 0: state_hash
+                cur_side,      # 1: cur_side
+                cur_len,       # 2: cur_len
+                prev[3] + 1,   # 3: cnt + 1
+                prev[4] + hist_hb, # 4: sum_hist_hb
+                prev[5] + hist_hp  # 5: sum_hist_hp
+            )
         else:
-            cs, cl, hb, hp, cnt, shb, shp = row
-            self.buffer[h] = (cs, cl, hb, hp, cnt + 1, shb + hist_hb, shp + hist_hp)
+            # 新增
+            self.buffer[state_hash] = (
+                state_hash, cur_side, cur_len, 1, hist_hb, hist_hp
+            )
 
     def flush_states(self):
         if not self.buffer:
             return
-
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        rows: List[Tuple[Any, ...]] = []
-        for state_hash, (cur_side, cur_len, hb_json, hp_json, cnt, sum_hb, sum_hp) in self.buffer.items():
-            rows.append((state_hash, cur_side, cur_len, hb_json, hp_json, cnt, sum_hb, sum_hp, now, now))
-
+        
+        # 确保 SQL 占位符正好是 6 个
         sql = """
-        INSERT INTO premax_snapshot_state
-          (state_hash, cur_side, cur_len, hist_b_json, hist_p_json, cnt, sum_hist_hb, sum_hist_hp, created_at, updated_at)
-        VALUES
-          (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-          cnt = cnt + VALUES(cnt),
-          sum_hist_hb = sum_hist_hb + VALUES(sum_hist_hb),
-          sum_hist_hp = sum_hist_hp + VALUES(sum_hist_hp),
-          updated_at = VALUES(updated_at);
+        INSERT INTO premax_snapshot_state (state_hash, cur_side, cur_len, cnt, sum_hist_hb, sum_hist_hp)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE 
+            cnt = cnt + VALUES(cnt),
+            sum_hist_hb = sum_hist_hb + VALUES(sum_hist_hb),
+            sum_hist_hp = sum_hist_hp + VALUES(sum_hist_hp)
         """
-
-        with self.conn.cursor() as cur:
-            cur.executemany(sql, rows)
-        self.conn.commit()
-        self.buffer.clear()
+        
+        rows = list(self.buffer.values())
+        
+        try:
+            with self.conn.cursor() as cur:
+                # executemany 会自动处理 rows 列表中的每个元组
+                cur.executemany(sql, rows)
+            self.conn.commit()
+            self.buffer.clear()
+        except Exception as e:
+            self.conn.rollback()
+            print(f"[DB ERROR] Flush failed: {e}")
+            # 如果是死锁，可以在这里加入上一轮讨论的重试逻辑
 
     def upsert_run_checkpoint(
         self,
