@@ -27,15 +27,20 @@ def render_practice_tab(lang):
     def t(key): return TRANSLATIONS.get(st.session_state.lang, {}).get(key, key)
 
     # --- 3. CSS 样式 (保持原样) ---
+    
     st.markdown("""
-        <style>
-            [data-testid="stSidebarContent"] { padding-top: 1rem !important; }
-            [data-testid="stVerticalBlock"] > div { gap: 0.5rem !important; }
-            [data-testid="stNumberInput"] label { height: 0px; overflow: hidden; display: none; }
-            hr { margin-top: 0.8rem !important; margin-bottom: 0.8rem !important; }
-        </style>
-    """, unsafe_allow_html=True)
-
+    <style>
+        [data-testid="stSidebarContent"] { padding-top: 1rem !important; }
+        [data-testid="stVerticalBlock"] > div { gap: 0.5rem !important; }
+        
+        /* ✅ 删除或注释掉下面这一行 */
+        /* [data-testid="stNumberInput"] label { height: 0px; overflow: hidden; display: none; } */
+        
+        hr { margin-top: 0.8rem !important; margin-bottom: 0.8rem !important; }
+    </style>
+""", unsafe_allow_html=True)
+    
+    
     def reset_logic():
         # 核心物理重置
         st.session_state.shoe = st.session_state.factory.create_shoe()
@@ -65,10 +70,16 @@ def render_practice_tab(lang):
         #st.divider()
 
         # A. 投注输入区
-        sb1, sb2 = st.columns(2)
-        bet_b = sb1.number_input(t("banker"), min_value=0, step=100)
-        bet_p = sb2.number_input(t("player"), min_value=0, step=100)
-        
+        sb2, sb1 = st.columns(2)
+
+        label_b = f"{t('🔴')}"
+        label_p = f"{t('🔵')}"
+        bet_b = sb1.number_input(label_b, min_value=0, step=100, key="bet_input_red")
+        bet_p = sb2.number_input(label_p, min_value=0, step=100, key="bet_input_blue")
+
+
+
+
         # B. 核心发牌与换靴控制
         remaining_cards = len(st.session_state.shoe)
         if remaining_cards <= st.session_state.cut_card_at:
