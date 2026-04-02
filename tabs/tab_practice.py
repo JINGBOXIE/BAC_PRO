@@ -22,21 +22,29 @@ def render_practice_tab(lang):
     """
     100% 还原原始测试版本的练习模块
         """
-    # 1. 获取开关，默认为 False
+    # tabs/tab_practice.py
+
+    # 1. 安全获取开关状态
     use_cloud = st.secrets.get("USE_CLOUD_REDIS", False)
 
-    # 2. 安全获取 URL：如果连云端，取 UPSTASH；如果连本地，取 LOCAL (若本地配置不存在则用默认值)
+    # 2. 优化 URL 获取逻辑，使用 .get() 避免 KeyError
     if use_cloud:
         redis_url = st.secrets.get("UPSTASH_REDIS_URL")
+        if not redis_url:
+            st.error("❌ 已开启云端模式，但未找到 UPSTASH_REDIS_URL 配置")
+            st.stop()
     else:
-        # 线上环境如果没有 LOCAL_REDIS_URL，赋予一个默认值防止崩溃
+        # 本地模式提供备选默认值
         redis_url = st.secrets.get("LOCAL_REDIS_URL", "redis://localhost:6379/0")
 
-    # 3. 检查必要的配置是否存在
-    if use_cloud and not redis_url:
-        st.error("❌ 线上模式已开启，但未检测到 UPSTASH_REDIS_URL 配置！")
-        st.stop()
-
+    # 3. 检查并初始化适配器 (确保逻辑连贯)
+    if 'redis_adapter' not in st.session_state:
+        try:
+            from core.db_adapter import RedisAdapter
+            st.session_state.redis_adapter = RedisAdapter(redis_url)
+            st.toast(f"✅ 已连接至 {'Upstash' if use_cloud else 'Local'} Redis")
+        except Exception as e:
+            st.error(f"Redis Connection Error: {e}")
     # tabs/tab_practice.py 内部初始化部分
     if 'clean_results' not in st.session_state:
         st.session_state.clean_results = []  # 专门存放剔除 T 后的序列
