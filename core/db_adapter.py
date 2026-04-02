@@ -3,13 +3,12 @@ import hashlib
 import redis
 import streamlit as st
 from core.snapshot_engine import build_state_key
-import json    # <--- 必须加上这一行
+import json    # <--- 必须有这一行，修复 NameError
 
 # --- 核心适配器 ---
 class RedisAdapter:
     def __init__(self, redis_url):
-        import redis
-        # 必须包含这三个关键参数
+        # 包含关键参数以确保云端连接稳定
         self.client = redis.from_url(
             redis_url, 
             decode_responses=True, 
@@ -17,18 +16,12 @@ class RedisAdapter:
         )
 
     def get_state_decision(self, state_hash):
-        """
-        从 Redis 获取指纹决策数据
-        """
         try:
-            # 这里的 Key 构造必须与你之前命令行 keys 查出来的一致
             full_key = f"fp:v8:{state_hash}"
             raw_val = self.client.get(full_key)
-            
             if not raw_val:
                 return None
             
-            # 解析数据: ACTION|EDGE|EV_CUT|EV_CONT
             parts = raw_val.split('|')
             return {
                 "action": parts[0],
@@ -37,15 +30,14 @@ class RedisAdapter:
                 "ev_cont": float(parts[3])
             }
         except Exception as e:
-            # 方便在线上日志中查看错误
             print(f"Redis Error: {e}")
             return None
 
 # --- 工具函数 ---
 def generate_fp_hash(c_side, c_len, hB_f, hP_f, h_min):
-    import json
-    import hashlib
-    
+    """
+    生成指纹哈希（工业标准化版：排序 + 剔除空格）
+    """
     payload = {
         "side": c_side,
         "len": c_len,
@@ -53,11 +45,12 @@ def generate_fp_hash(c_side, c_len, hB_f, hP_f, h_min):
         "hP": hP_f,
         "h_min": h_min
     }
-    
-    # 🚨 关键：sort_keys 解决顺序问题，separators=(',', ':') 彻底剔除环境空格差异
+    # 🚨 关键：必须加上 separators=(',', ':') 彻底剔除环境空格差异
+    # 这能保证 Python 3.11 和 3.14 生成的字符串绝对一致
     data_str = json.dumps(payload, sort_keys=True, separators=(',', ':'))
-    
     return hashlib.sha256(data_str.encode()).hexdigest()
+
+
 
 # --- 兼容性封装 (线上版本主要调用这个) ---
 
