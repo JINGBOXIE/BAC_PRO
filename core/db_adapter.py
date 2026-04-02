@@ -3,6 +3,7 @@ import hashlib
 import redis
 import streamlit as st
 from core.snapshot_engine import build_state_key
+import json    # <--- 必须加上这一行
 
 # --- 核心适配器 ---
 class RedisAdapter:
@@ -42,8 +43,9 @@ class RedisAdapter:
 
 # --- 工具函数 ---
 def generate_fp_hash(c_side, c_len, hB_f, hP_f, h_min):
-    # 核心修复：使用 json.dumps 并开启 sort_keys=True
-    # 这会强制按 Key 的字母顺序排列字典，确保哈希值全球统一
+    """
+    生成指纹哈希（强制排序版）
+    """
     payload = {
         "side": c_side,
         "len": c_len,
@@ -51,12 +53,10 @@ def generate_fp_hash(c_side, c_len, hB_f, hP_f, h_min):
         "hP": hP_f,
         "h_min": h_min
     }
-    
-    # 转换为标准化字符串
+    # 这一行就是报错来源，现在有了 import json 就好了
     data_str = json.dumps(payload, sort_keys=True)
-    
-    # 生成 SHA256
     return hashlib.sha256(data_str.encode()).hexdigest()
+
 
 
 # --- 兼容性封装 (线上版本主要调用这个) ---
