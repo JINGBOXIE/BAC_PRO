@@ -41,24 +41,23 @@ class RedisAdapter:
             return None
 
 # --- 工具函数 ---
+def generate_fp_hash(c_side, c_len, hB_f, hP_f, h_min):
+    # 核心修复：使用 json.dumps 并开启 sort_keys=True
+    # 这会强制按 Key 的字母顺序排列字典，确保哈希值全球统一
+    payload = {
+        "side": c_side,
+        "len": c_len,
+        "hB": hB_f,
+        "hP": hP_f,
+        "h_min": h_min
+    }
+    
+    # 转换为标准化字符串
+    data_str = json.dumps(payload, sort_keys=True)
+    
+    # 生成 SHA256
+    return hashlib.sha256(data_str.encode()).hexdigest()
 
-def generate_fp_hash(cur_side, cur_len, hist_B, hist_P, hist_min=3):
-    """
-    [规格文档 1.2 对齐] 应用动态 hist_min 截断并生成 SHA256 哈希
-    """
-    # 过滤掉小于 hist_min 的柱子
-    f_B = {k: v for k, v in hist_B.items() if int(k) >= hist_min}
-    f_P = {k: v for k, v in hist_P.items() if int(k) >= hist_min}
-    
-    # 构造原始 Key
-    raw_key = build_state_key(
-        cur_side=cur_side,
-        cur_len=cur_len,
-        hist_B=f_B,
-        hist_P=f_P
-    )
-    
-    return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
 # --- 兼容性封装 (线上版本主要调用这个) ---
 
