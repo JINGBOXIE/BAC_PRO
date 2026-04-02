@@ -297,101 +297,72 @@ def render_practice_tab(lang):
     </div>""", unsafe_allow_html=True)
         
     with col_right:
-        # 1. 语言配置
-        is_cn = st.session_state.get('lang', 'CN') == 'CN'
-        lang_map = {
-            "title": "🔍 AI FINGERPRINT SCAN" if not is_cn else "🔍 AI 指纹扫描决策",
-            "waiting": "Waiting for sequence..." if not is_cn else "等待序列输入...",
-            "action_label": "Best Action" if not is_cn else "最优决策",
-            "edge_label": "Edge Advantage" if not is_cn else "优势概率",
-            "insufficient": "DEPTH INSUFFICIENT" if not is_cn else "序列深度不足",
-            "miss": "DATA MISS (1.4M+)" if not is_cn else "未匹配到历史指纹",
-        }
+            from core.snapshot_engine import get_fp_components
+            from core.db_adapter import get_fingerprint_advice, generate_fp_hash
+            from modules.ui_components import render_snapshot_ai
 
-        from core.snapshot_engine import get_fp_components
-        from core.db_adapter import RedisAdapter, generate_fp_hash 
-
-        # 2. Redis 连接初始化
-        if 'redis_adapter' not in st.session_state:
-            try:
-                st.session_state.redis_adapter = RedisAdapter(st.secrets["UPSTASH_REDIS_URL"])
-            except Exception as e:
-                st.error(f"Redis Error: {e}")
-
-        # 3. 状态逻辑处理
-        clean_seq = st.session_state.get('clean_results', [])
-        h_min = 3 
-        fp_advice = {"match": False, "status": "WAITING"}
-
-        if clean_seq:
-            c_side, c_len, hB_raw, hP_raw = get_fp_components(clean_seq)
-            hB_f = {k: v for k, v in hB_raw.items() if int(k) >= h_min}
-            hP_f = {k: v for k, v in hP_raw.items() if int(k) >= h_min}
-
-            if hB_f or hP_f:
-                state_hash = generate_fp_hash(c_side, c_len, hB_f, hP_f, h_min)
-                decision = st.session_state.redis_adapter.get_state_decision(state_hash)
+            # 获取当前序列与参数
+            clean_seq = st.session_state.get('clean_results', [])
+            h_min = st.session_state.get('hist_min', 3)
+            
+            # --- 0. 声明保底变量，防止 UnboundLocalError ---
+            # 默认设置为初始化状态（match=False 触发 UI 的“正在匹配”提示）
+            fp_advice = {
+                "match": False, 
+                "fp_id": "READY", 
+                "action": "WAIT", 
+                "edge": 0.0, 
+                "ev_info": {}
+            }
+            
+            # --- 1. 执行 AI 计算逻辑 ---
+            if clean_seq:
+                # 1. 提取原始物理要素
+                c_side, c_len, hB_raw, hP_raw = get_fp_components(clean_seq)
                 
-                if decision:
-                    fp_advice = {
-                        "match": True,
-                        "action": decision["action"],
-                        "edge": decision["edge"],
-                        "ev_cut": decision["ev_cut"],
-                        "ev_cont": decision["ev_cont"],
-                        "fp_id": state_hash
-                    }
+                # 2. 执行脱水过滤
+                hB_filtered = {k: v for k, v in hB_raw.items() if int(k) >= h_min}
+                hP_filtered = {k: v for k, v in hP_raw.items() if int(k) >= h_min}
+
+                # 🚀 核心修改：双空检查门槛
+                if hB_filtered or hP_filtered:
+                    # 3. 生成最终 KEY
+                    fp_key = generate_fp_hash(c_side, c_len, hB_filtered, hP_filtered, h_min)
+                    
+                    # 4. 获取数据库查询建议 (此处覆盖初始的 fp_advice)
+                    fp_advice = get_fingerprint_advice(
+                        cur_side=c_side,
+                        cur_len=c_len,
+                        hist_B=hB_filtered,
+                        hist_P=hP_filtered,
+                        hist_min=h_min
+                    )
+
+                    # # 5. 打印完整 4 要素调试信息 (保留)
+                    print("\n" + "="*40)
+                    print(f"✅ [FP MATCHING] Min Filter: {h_min}")
+                    print(f"1. Side/Len: {c_side} / {c_len}")
+                    print(f"2. History B: {hB_filtered} (Raw: {hB_raw})")
+                    print(f"3. History P: {hP_filtered} (Raw: {hP_raw})")
+                    print(f"4. Filter Min: {h_min}")
+                    print(f"👉 GENERATED KEY: {fp_key}")
+                    print("="*40 + "\n")
                 else:
-                    fp_advice = {"match": False, "status": lang_map["miss"], "fp_id": state_hash}
+                    # 过滤后深度不足
+                    fp_advice = {
+                        "match": False,
+                        "fp_id": "DEPTH INSUFFICIENT", 
+                        "status": f"Need streak >= {h_min}",
+                        "side": "Neutral"
+                    }
+                    print(f"ℹ️ [FP SKIP] 历史特征不足 (Min: {h_min})，跳过指纹生成。")
             else:
-                fp_advice = {"match": False, "status": lang_map["insufficient"]}
+                # NEW SHOE 后 clean_seq 为空，直接使用初始声明的 fp_advice
+                pass
 
-        # 4. 构建 HTML 字符串 (关键修复：避免嵌套 f-string)
-        # 外层容器
-        html = '<div style="padding: 18px; border: 2px solid #1E90FF; border-radius: 15px; background-color: rgba(10, 20, 30, 0.6); box-shadow: 0 4px 15px rgba(0,0,0,0.3); min-height: 220px;">'
-        
-        # 头部
-        html += f'<div style="font-weight: bold; color: #1E90FF; font-size: 0.9rem; letter-spacing: 1px; margin-bottom: 12px; border-bottom: 1px solid #1E90FF44; padding-bottom: 8px; display: flex; justify-content: space-between;">'
-        html += f'<span>{lang_map["title"]}</span><span style="font-size: 0.6rem; color: #555; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px;">V8-KV</span></div>'
-
-        # 内容区判断
-        if not fp_advice.get('match') and fp_advice.get('status') == 'WAITING':
-            html += f'<div style="color:#666; text-align:center; padding: 40px;">{lang_map["waiting"]}</div>'
-        
-        elif fp_advice.get('match'):
-            fid = fp_advice["fp_id"]
-            act = fp_advice["action"]
-            edge = fp_advice["edge"]
-            e_cut_pct = f'{fp_advice["ev_cut"]*100:+.2f}%'
-            e_cont_pct = f'{fp_advice["ev_cont"]*100:+.2f}%'
-            edge_pct = f'{edge:+.2%}'
-
-            html += f'''
-            <div>
-                <div style="font-family: monospace; font-size: 0.65rem; color: #1E90FF; background: rgba(0,0,0,0.3); padding: 5px; border-radius: 4px; word-break: break-all; margin-bottom: 15px;">Fingerprint: {fid}</div>
-                <div style="text-align: center; margin-bottom: 20px;">
-                    <div style="font-size: 0.7rem; color: #888; text-transform: uppercase;">{lang_map["action_label"]}</div>
-                    <div style="font-size: 2.2rem; font-weight: 800; color: #00FFAA; text-shadow: 0 0 10px rgba(0,255,170,0.4);">{act}</div>
-                </div>
-                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                    <div style="flex: 1; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #444;">
-                        <div style="font-size: 0.6rem; color: #aaa;">EV (CUT)</div>
-                        <div style="font-size: 1.1rem; font-weight: bold; color: #fff;">{e_cut_pct}</div>
-                    </div>
-                    <div style="flex: 1; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #444;">
-                        <div style="font-size: 0.6rem; color: #aaa;">EV (CONT)</div>
-                        <div style="font-size: 1.1rem; font-weight: bold; color: #fff;">{e_cont_pct}</div>
-                    </div>
-                </div>
-                <div style="text-align: center; background: rgba(0,255,170,0.1); padding: 5px; border-radius: 20px; border: 1px solid #00FFAA33;">
-                    <span style="font-size: 0.8rem; color: #00FFAA; font-weight: bold;">{lang_map["edge_label"]}: {edge_pct}</span>
-                </div>
-            </div>
-            '''
-        else:
-            html += f'<div style="color:#FF4444; margin-top: 40px; text-align:center; font-size: 0.9rem;">⚠️ {fp_advice["status"]}</div>'
-
-        html += '</div>'
-
-        # 5. 渲染
-        st.markdown(html, unsafe_allow_html=True)
+            # --- 2. 同步状态并渲染 ---
+            # 更新 Session State 以便其他组件（如日志）同步
+            st.session_state.last_fp_advice = fp_advice
+            
+            # 渲染右侧面板
+            render_snapshot_ai(st.session_state.last_fp_advice, lang=st.session_state.get('lang', 'CN'))

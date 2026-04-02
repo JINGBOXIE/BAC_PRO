@@ -5,30 +5,7 @@ import os
 import json
 import hashlib
 from core.snapshot_engine import build_state_key
-import redis
 
-class RedisAdapter:
-    def __init__(self, redis_url):
-        self.client = redis.from_url(redis_url, decode_responses=True)
-
-    def get_state_decision(self, state_hash):
-        """
-        获取脱水后的决策数据
-        返回格式: dict {action, edge, ev_cut, ev_cont}
-        """
-        raw_val = self.client.get(f"fp:v8:{state_hash}")
-        if not raw_val:
-            return None
-        
-        # 解析脱水字符串
-        parts = raw_val.split('|')
-        return {
-            "action": parts[0],
-            "edge": float(parts[1]),
-            "ev_cut": float(parts[2]),
-            "ev_cont": float(parts[3])
-        }
-    
 def generate_fp_hash(cur_side, cur_len, hist_B, hist_P, hist_min=3):
     """
     [规格文档 1.2 对齐] 

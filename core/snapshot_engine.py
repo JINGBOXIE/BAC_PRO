@@ -217,3 +217,40 @@ class SnapshotEngine:
         streak_engine = StreakEngine(emit_shoe_end_event=True)
         events = streak_engine.run(shoes=shoes, seed_start=seed_start, decks=decks, cut_cards=cut_cards)
         return self.run_streak_events(events)
+    # core/snapshot_engine.py 末尾添加
+
+# core/snapshot_engine.py 末尾添加
+
+def get_fp_components(results: list):
+    """
+    [规格文档 3.1 对齐] 
+    从原始结果序列 [B, P, B...] 中提取指纹要素：Side, Len, hist_B, hist_P
+    """
+    if not results:
+        return "B", 0, {}, {}
+    
+    # 1. 计算当前列方向和长度
+    cur_side = results[-1]
+    cur_len = 0
+    for r in reversed(results):
+        if r == cur_side:
+            cur_len += 1
+        else:
+            break
+            
+    # 2. 统计历史分布 (不包含当前正在进行的这一列)
+    hist_B = {}
+    hist_P = {}
+    
+    if len(results) > cur_len:
+        temp_results = results[:-cur_len]
+        if temp_results:
+            # 简单的连路统计逻辑
+            from itertools import groupby
+            streaks = [(label, sum(1 for _ in group)) for label, group in groupby(temp_results)]
+            for side, length in streaks:
+                target = hist_B if side == "B" else hist_P
+                l_str = str(length)
+                target[l_str] = target.get(l_str, 0) + 1
+
+    return cur_side, cur_len, hist_B, hist_P

@@ -24,7 +24,6 @@ if 'lang' not in st.session_state:
     st.session_state.lang = "CN"
 
 # 4. 侧边栏导航控制 (主导航中心)
-# main.py
 
 with st.sidebar:
     # 1. 确保文件名与本地文件完全一致（包括空格）
@@ -35,17 +34,25 @@ with st.sidebar:
     logo_path = os.path.join(curr_dir, logo_filename)
 
     if os.path.exists(logo_path):
-        # ✅ 使用 use_container_width=True 替代 use_column_width
-        st.image(logo_path, use_container_width=True)
+        # ✅ 使用 width="stretch" 替代 use_column_width
+        st.image(logo_path, width="stretch")
     else:
         # 如果还是找不到，尝试直接用文件名（Streamlit 有时能自动处理相对路径）
         try:
             st.image(logo_filename, width=360)
-            #st.image(logo_filename, use_container_width=True)
+            #st.image(logo_filename, width="stretch")
         except:
             st.subheader("J Studio") # 兜底显示文字
     
     st.divider()
+        # 此滑块直接定义“拍照/观察范围” 
+    st.session_state.hist_min = st.slider(
+        "FINGERPRINT SCOPE (hist_min)",
+        min_value=1,
+        max_value=14,
+        value=3,
+        help="设定指纹生成的最小连单粒度。3代表忽略1-2连的噪音干扰。"
+    )
 
     
     # ✅ 3. 唯一的语言切换器 (负责全局状态)

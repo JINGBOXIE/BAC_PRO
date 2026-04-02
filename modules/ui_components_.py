@@ -150,73 +150,24 @@ def render_bias_panel(sig, lang="CN"):
         </div>
     """, unsafe_allow_html=True)
     
-# modules/ui_components.py
+def render_snapshot_ai(ai_data, lang="CN"):
+    """🤖 右侧：SNAPSHOT AI (支持中英文)"""
+    if not ai_data: ai_data = {}
+    color = "#00FFFF"
+    
+    t_title = "🤖 大路指纹🫆扫描ing" if lang=="CN" else "🤖 Big Road Fingerprint🫆 Scanning "
+    t_hash = "特征指纹" if lang=="CN" else "Fingerprint"
+    t_scan = "正在扫描..." if lang=="CN" else "SCANNING..."
 
-def render_snapshot_ai(fp_advice, lang='CN'):
-    # 1. 定义多语言字典
-    texts = {
-        'CN': {
-            'title': '🎯 AI 策略引擎',
-            'matching': '🧬 正在匹配指纹库...',
-            'edge': '优势边际',
-            'action': '建议动作',
-            'ev_labels': {
-                '斩 (Cut)': '斩 (Cut)',
-                '跟 (Cont)': '跟 (Cont)'
-            }
-        },
-        'EN': {
-            'title': '🎯 AI STRATEGY ENGINE',
-            'matching': '🧬 Matching Fingerprint...',
-            'edge': 'Edge Margin',
-            'action': 'Action',
-            'ev_labels': {
-                '斩 (Cut)': 'Cut',
-                '跟 (Cont)': 'Cont'
-            }
-        }
-    }
-    t = texts[lang]
-
-    # 2. 渲染外框（使用 border=True 确保与左侧对称）
-    with st.container(border=True):
-        st.markdown(f"**{t['title']}**")
-        
-        if not fp_advice.get('match'):
-            st.info(t['matching'])
-            # 保持高度占位，防止闪烁
-            st.caption(f"Fingerprint: {fp_advice.get('fp_id', 'N/A')[:16]}...")
-            return
-
-        # 获取数据
-        action = fp_advice.get('action', 'WAIT')
-        edge = fp_advice.get('edge', 0.0)
-        ev_info = fp_advice.get('ev_info', {}) # 格式: {'斩 (Cut)': 0.0067, '跟 (Cont)': -0.0315}
-
-        # 显示 Key (与左侧 RANK BIAS 对齐)
-        st.code(f"Key: {fp_advice.get('fp_id')[:32]}...", language="text")
-
-        # 核心指标：动作与 Edge
-        col1, col2 = st.columns(2)
-        with col1:
-            st.caption(t['action'])
-            color = "#00FF00" if edge > 0 else "#FF4B4B"
-            st.markdown(f"<h2 style='color:{color}; margin:0;'>{action}</h2>", unsafe_allow_html=True)
-        with col2:
-            # 统一使用 USD 计价逻辑显示优势
-            st.metric(label=t['edge'], value=f"{edge:.2%}")
-
-        st.divider()
-
-        # 3. 分语言显示 EV 详情
-        st.caption("Detailed EV" if lang=='EN' else "详细预期值")
-        ev_cols = st.columns(len(ev_info))
-        
-        # 遍历原始数据中的 Key，通过字典转换标签
-        for i, (raw_key, val) in enumerate(ev_info.items()):
-            display_label = t['ev_labels'].get(raw_key, raw_key)
-            with ev_cols[i]:
-                st.write(f"{display_label}:")
-                # 正值加粗绿色，负值红色
-                v_color = "green" if val >= 0 else "#FF4B4B"
-                st.markdown(f"<code style='color:{v_color};'>{val:.4f}</code>", unsafe_allow_html=True)
+    st.markdown(f"""
+        <div style='border:1px solid {color}; padding:15px; border-radius:10px; background:rgba(0,0,0,0.2); min-height:180px;'>
+            <div style='color:{color}; font-weight:bold; border-bottom:1px solid #333; padding-bottom:5px; margin-bottom:15px;'>{t_title}</div>
+            <div style='font-size:0.85rem; color:#888;'>
+                {t_hash}: <span style='color:white;'>{ai_data.get('fingerprint', 'HASH-8x2A')}</span><br>
+                { "相似度:" if lang=="CN" else "Similarity:" } <span style='color:white;'>{ai_data.get('similarity', '0.0%')}</span>
+            </div>
+            <div style='text-align:center; padding-top:10px;'>
+                <span style='color:{color}; font-size:1.2rem; font-weight:bold;'>{ai_data.get('status', t_scan)}</span>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)

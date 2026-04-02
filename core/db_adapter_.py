@@ -5,30 +5,7 @@ import os
 import json
 import hashlib
 from core.snapshot_engine import build_state_key
-import redis
 
-class RedisAdapter:
-    def __init__(self, redis_url):
-        self.client = redis.from_url(redis_url, decode_responses=True)
-
-    def get_state_decision(self, state_hash):
-        """
-        获取脱水后的决策数据
-        返回格式: dict {action, edge, ev_cut, ev_cont}
-        """
-        raw_val = self.client.get(f"fp:v8:{state_hash}")
-        if not raw_val:
-            return None
-        
-        # 解析脱水字符串
-        parts = raw_val.split('|')
-        return {
-            "action": parts[0],
-            "edge": float(parts[1]),
-            "ev_cut": float(parts[2]),
-            "ev_cont": float(parts[3])
-        }
-    
 def generate_fp_hash(cur_side, cur_len, hist_B, hist_P, hist_min=3):
     """
     [规格文档 1.2 对齐] 
@@ -53,18 +30,23 @@ import mysql.connector # 或者使用 st.connection
 import pandas as pd
 import streamlit as st
 
-# core/db_adapter.py
-
 def get_fingerprint_advice(cur_side, cur_len, hist_B, hist_P, hist_min=3):
-    # 1. 生成指纹 (确保与 state_sampler.py 的逻辑对齐)
+    # 第一步：根据 4 要素生成哈希，用于匹配数据库的 state_hash 字段
     state_hash = generate_fp_hash(cur_side, cur_len, hist_B, hist_P, hist_min)
     
+    # 第二步：执行 SQL 查询 (WHERE state_hash = %s)
+
+    # 2. 从 Streamlit Secrets 或配置获取数据库连接
+    # 建议使用 st.connection 提高性能（含内置连接池）
+    # 在 get_fingerprint_advice 内部执行查询前
+    print(f"DEBUG SQL: SELECT * FROM premax_state_ev WHERE state_hash = '{state_hash}';")
+
+
     try:
-        # 使用 st.secrets 中的配置连接
         conn = mysql.connector.connect(**st.secrets["mysql"])
         cursor = conn.cursor(dictionary=True)
         
-        # 2. 执行查询，获取 2026 重新系统学习金融经济所需的量化指标
+        # 3. 执行高频索引查询
         query = """
             SELECT best_action, edge, ev_cut, ev_continue, p_cut, p_continue 
             FROM premax_state_ev 
@@ -76,25 +58,36 @@ def get_fingerprint_advice(cur_side, cur_len, hist_B, hist_P, hist_min=3):
         conn.close()
         
         if row:
+            # 命中数据库 ✅
             return {
                 "match": True,
                 "fp_id": state_hash,
-                "action": row['best_action'],
+                "fingerprint": state_hash,
                 "edge": row['edge'],
+                "action": row['best_action'],
                 "ev_info": {
-                    "斩 (Cut)": row['ev_cut'],
-                    "跟 (Cont)": row['ev_continue']
+                    "cut": row['ev_cut'],
+                    "continue": row['ev_continue']
                 },
                 "prob": {
-                    "P_Cut": row['p_cut'],
-                    "P_Cont": row['p_continue']
-                }
+                    "p_cut": row['p_cut'],
+                    "p_cont": row['p_continue']
+                },
+                "status": "STRATEGY READY"
             }
+            
     except Exception as e:
-        print(f"[TEST-ONLY] DB Error: {e}")
-    
-    return {"match": False, "fp_id": state_hash}
+        print(f"❌ Database Access Error: {e}")
 
+    # 4. 未命中：模型未覆盖到的稀有状态 ❌
+    return {
+        "match": False,
+        "fp_id": state_hash,
+        "fingerprint": state_hash,
+        "edge": 0.0,
+        "action": "WAIT",
+        "status": "NO HIST DATA"
+    }
 
 def query_fp_advice(fp_id):
     """

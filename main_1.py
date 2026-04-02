@@ -35,13 +35,13 @@ with st.sidebar:
     logo_path = os.path.join(curr_dir, logo_filename)
 
     if os.path.exists(logo_path):
-        # ✅ 使用 use_container_width=True 替代 use_column_width
-        st.image(logo_path, use_container_width=True)
+        # ✅ 使用 width="stretch" 替代 use_column_width
+        st.image(logo_path, width="stretch")
     else:
         # 如果还是找不到，尝试直接用文件名（Streamlit 有时能自动处理相对路径）
         try:
             st.image(logo_filename, width=360)
-            #st.image(logo_filename, use_container_width=True)
+            #st.image(logo_filename, width="stretch")
         except:
             st.subheader("J Studio") # 兜底显示文字
     
