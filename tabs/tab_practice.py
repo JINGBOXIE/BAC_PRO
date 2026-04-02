@@ -3,7 +3,7 @@ import os
 import sys
 import pandas as pd
 import random
-
+import redis
 # 1. 路径注入
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
