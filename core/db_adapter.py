@@ -21,12 +21,9 @@ class RedisAdapter:
 
 
     def get_state_decision(self, state_hash):
-        """
-        从 Redis 获取指纹决策数据 (保持原有逻辑)
-        """
         try:
-            # 严格对齐 fp:v8: 前缀
-            raw_val = self.client.get(f"fp:v8:{state_hash}")
+            full_key = f"fp:v8:{state_hash}"
+            raw_val = self.client.get(full_key)
             if not raw_val:
                 return None
             
@@ -38,9 +35,7 @@ class RedisAdapter:
                 "ev_cont": float(parts[3])
             }
         except Exception as e:
-            print(f"⚠️ Redis Query Error: {e}")
             return None
-        
 
 # --- 工具函数 ---
 

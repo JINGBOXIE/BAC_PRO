@@ -22,6 +22,28 @@ def render_practice_tab(lang):
     """
     100% 还原原始测试版本的练习模块
     """
+    # === 新增代码开始：Redis 动态初始化与切换逻辑 ===
+    use_cloud = st.secrets.get("USE_CLOUD_REDIS", False)
+    # 确保 secrets 里有这两个 Key，否则会报错
+    redis_url = st.secrets["UPSTASH_REDIS_URL"] if use_cloud else st.secrets["LOCAL_REDIS_URL"]
+
+    # 检查配置是否发生变化（防止本地改了配置但 Session 没更新）
+    if 'last_used_url' not in st.session_state or st.session_state.last_used_url != redis_url:
+        if 'redis_adapter' in st.session_state:
+            del st.session_state.redis_adapter
+        st.session_state.last_used_url = redis_url
+
+    # 初始化或重新创建 Adapter
+    if 'redis_adapter' not in st.session_state:
+        from core.db_adapter import RedisAdapter
+        st.session_state.redis_adapter = RedisAdapter(redis_url)
+        # 给用户一个直观的反馈
+        st.toast(f"✅ 已连接至 {'Upstash 云端' if use_cloud else '本地'} Redis")
+    # === 新增代码结束 ===
+
+    # 原有的初始化逻辑（保持不变）
+    if 'clean_results' not in st.session_state:
+        st.session_state.clean_results = []
 
     # tabs/tab_practice.py 内部初始化部分
     if 'clean_results' not in st.session_state:
@@ -340,6 +362,7 @@ def render_practice_tab(lang):
 
                 if hB_f or hP_f:
                     state_hash = generate_fp_hash(c_side, c_len, hB_f, hP_f, h_min)
+                    #st.write(f"正在查询的完整 Key: fp:v8:{state_hash}")
                     decision = st.session_state.redis_adapter.get_state_decision(state_hash)
                     
                     if decision:
