@@ -296,102 +296,112 @@ def render_practice_tab(lang):
         </div>
     </div>""", unsafe_allow_html=True)
         
+
     with col_right:
-        # 1. 语言配置
-        is_cn = st.session_state.get('lang', 'CN') == 'CN'
-        lang_map = {
-            "title": "🔍 AI FINGERPRINT SCAN" if not is_cn else "🔍 AI 指纹扫描决策",
-            "waiting": "Waiting for sequence..." if not is_cn else "等待序列输入...",
-            "action_label": "Best Action" if not is_cn else "最优决策",
-            "edge_label": "Edge Advantage" if not is_cn else "优势概率",
-            "insufficient": "DEPTH INSUFFICIENT" if not is_cn else "序列深度不足",
-            "miss": "DATA MISS (1.4M+)" if not is_cn else "未匹配到历史指纹",
-        }
+            # 1. 语言配置
+            is_cn = st.session_state.get('lang', 'CN') == 'CN'
+            lang_map = {
+                "title": "🔍 AI FINGERPRINT SCAN" if not is_cn else "🔍 AI 指纹扫描决策",
+                "waiting": "Waiting for sequence..." if not is_cn else "等待序列输入...",
+                "action_label": "Best Action" if not is_cn else "最优决策",
+                "edge_label": "Edge Advantage" if not is_cn else "优势概率",
+                "insufficient": "DEPTH INSUFFICIENT" if not is_cn else "序列深度不足",
+                "miss": "DATA MISS (1.4M+)" if not is_cn else "未匹配到历史指纹",
+            }
 
-        from core.snapshot_engine import get_fp_components
-        from core.db_adapter import RedisAdapter, generate_fp_hash 
+            from core.snapshot_engine import get_fp_components
+            from core.db_adapter import RedisAdapter, generate_fp_hash 
 
-        # 2. Redis 连接初始化
-        if 'redis_adapter' not in st.session_state:
-            try:
-                st.session_state.redis_adapter = RedisAdapter(st.secrets["UPSTASH_REDIS_URL"])
-            except Exception as e:
-                st.error(f"Redis Error: {e}")
+            # 2. Redis 连接初始化 (集成环境切换逻辑)
+            if 'redis_adapter' not in st.session_state:
+                try:
+                    # 自动根据开关选择 URL
+                    use_cloud = st.secrets.get("USE_CLOUD_REDIS", False)
+                    target_url = st.secrets["UPSTASH_REDIS_URL"] if use_cloud else st.secrets["LOCAL_REDIS_URL"]
+                    
+                    # 初始化适配器
+                    st.session_state.redis_adapter = RedisAdapter(target_url)
+                    
+                    # 提示当前连接模式
+                    mode_msg = "Online" if use_cloud else "Local"
+                    st.toast(f"Connected to {mode_msg} Redis")
+                except Exception as e:
+                    st.error(f"Redis Connection Error: {e}")
 
-        # 3. 状态逻辑处理
-        clean_seq = st.session_state.get('clean_results', [])
-        h_min = 3 
-        fp_advice = {"match": False, "status": "WAITING"}
+            # 3. 状态逻辑处理
+            clean_seq = st.session_state.get('clean_results', [])
+            h_min = 3 
+            fp_advice = {"match": False, "status": "WAITING"}
 
-        if clean_seq:
-            c_side, c_len, hB_raw, hP_raw = get_fp_components(clean_seq)
-            hB_f = {k: v for k, v in hB_raw.items() if int(k) >= h_min}
-            hP_f = {k: v for k, v in hP_raw.items() if int(k) >= h_min}
+            if clean_seq:
+                c_side, c_len, hB_raw, hP_raw = get_fp_components(clean_seq)
+                hB_f = {k: v for k, v in hB_raw.items() if int(k) >= h_min}
+                hP_f = {k: v for k, v in hP_raw.items() if int(k) >= h_min}
 
-            if hB_f or hP_f:
-                state_hash = generate_fp_hash(c_side, c_len, hB_f, hP_f, h_min)
-                decision = st.session_state.redis_adapter.get_state_decision(state_hash)
-                
-                if decision:
-                    fp_advice = {
-                        "match": True,
-                        "action": decision["action"],
-                        "edge": decision["edge"],
-                        "ev_cut": decision["ev_cut"],
-                        "ev_cont": decision["ev_cont"],
-                        "fp_id": state_hash
-                    }
+                if hB_f or hP_f:
+                    state_hash = generate_fp_hash(c_side, c_len, hB_f, hP_f, h_min)
+                    decision = st.session_state.redis_adapter.get_state_decision(state_hash)
+                    
+                    if decision:
+                        fp_advice = {
+                            "match": True,
+                            "action": decision["action"],
+                            "edge": decision["edge"],
+                            "ev_cut": decision["ev_cut"],
+                            "ev_cont": decision["ev_cont"],
+                            "fp_id": state_hash
+                        }
+                    else:
+                        fp_advice = {"match": False, "status": lang_map["miss"], "fp_id": state_hash}
                 else:
-                    fp_advice = {"match": False, "status": lang_map["miss"], "fp_id": state_hash}
+                    fp_advice = {"match": False, "status": lang_map["insufficient"]}
+
+            # 4. 构建 HTML 字符串 (关键修复：避免嵌套 f-string)
+            # 外层容器
+            html = '<div style="padding: 18px; border: 2px solid #1E90FF; border-radius: 15px; background-color: rgba(10, 20, 30, 0.6); box-shadow: 0 4px 15px rgba(0,0,0,0.3); min-height: 220px;">'
+            
+            # 头部
+            html += f'<div style="font-weight: bold; color: #1E90FF; font-size: 0.9rem; letter-spacing: 1px; margin-bottom: 12px; border-bottom: 1px solid #1E90FF44; padding-bottom: 8px; display: flex; justify-content: space-between;">'
+            html += f'<span>{lang_map["title"]}</span><span style="font-size: 0.6rem; color: #555; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px;">V8-KV</span></div>'
+
+            # 内容区判断
+            if not fp_advice.get('match') and fp_advice.get('status') == 'WAITING':
+                html += f'<div style="color:#666; text-align:center; padding: 40px;">{lang_map["waiting"]}</div>'
+            
+            elif fp_advice.get('match'):
+                fid = fp_advice["fp_id"]
+                act = fp_advice["action"]
+                edge = fp_advice["edge"]
+                e_cut_pct = f'{fp_advice["ev_cut"]*100:+.2f}%'
+                e_cont_pct = f'{fp_advice["ev_cont"]*100:+.2f}%'
+                edge_pct = f'{edge:+.2%}'
+
+                html += f'''
+                <div>
+                    <div style="font-family: monospace; font-size: 0.65rem; color: #1E90FF; background: rgba(0,0,0,0.3); padding: 5px; border-radius: 4px; word-break: break-all; margin-bottom: 15px;">Fingerprint: {fid}</div>
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        <div style="font-size: 0.7rem; color: #888; text-transform: uppercase;">{lang_map["action_label"]}</div>
+                        <div style="font-size: 2.2rem; font-weight: 800; color: #00FFAA; text-shadow: 0 0 10px rgba(0,255,170,0.4);">{act}</div>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                        <div style="flex: 1; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #444;">
+                            <div style="font-size: 0.6rem; color: #aaa;">EV (CUT)</div>
+                            <div style="font-size: 1.1rem; font-weight: bold; color: #fff;">{e_cut_pct}</div>
+                        </div>
+                        <div style="flex: 1; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #444;">
+                            <div style="font-size: 0.6rem; color: #aaa;">EV (CONT)</div>
+                            <div style="font-size: 1.1rem; font-weight: bold; color: #fff;">{e_cont_pct}</div>
+                        </div>
+                    </div>
+                    <div style="text-align: center; background: rgba(0,255,170,0.1); padding: 5px; border-radius: 20px; border: 1px solid #00FFAA33;">
+                        <span style="font-size: 0.8rem; color: #00FFAA; font-weight: bold;">{lang_map["edge_label"]}: {edge_pct}</span>
+                    </div>
+                </div>
+                '''
             else:
-                fp_advice = {"match": False, "status": lang_map["insufficient"]}
+                html += f'<div style="color:#FF4444; margin-top: 40px; text-align:center; font-size: 0.9rem;">⚠️ {fp_advice["status"]}</div>'
 
-        # 4. 构建 HTML 字符串 (关键修复：避免嵌套 f-string)
-        # 外层容器
-        html = '<div style="padding: 18px; border: 2px solid #1E90FF; border-radius: 15px; background-color: rgba(10, 20, 30, 0.6); box-shadow: 0 4px 15px rgba(0,0,0,0.3); min-height: 220px;">'
-        
-        # 头部
-        html += f'<div style="font-weight: bold; color: #1E90FF; font-size: 0.9rem; letter-spacing: 1px; margin-bottom: 12px; border-bottom: 1px solid #1E90FF44; padding-bottom: 8px; display: flex; justify-content: space-between;">'
-        html += f'<span>{lang_map["title"]}</span><span style="font-size: 0.6rem; color: #555; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px;">V8-KV</span></div>'
+            html += '</div>'
 
-        # 内容区判断
-        if not fp_advice.get('match') and fp_advice.get('status') == 'WAITING':
-            html += f'<div style="color:#666; text-align:center; padding: 40px;">{lang_map["waiting"]}</div>'
-        
-        elif fp_advice.get('match'):
-            fid = fp_advice["fp_id"]
-            act = fp_advice["action"]
-            edge = fp_advice["edge"]
-            e_cut_pct = f'{fp_advice["ev_cut"]*100:+.2f}%'
-            e_cont_pct = f'{fp_advice["ev_cont"]*100:+.2f}%'
-            edge_pct = f'{edge:+.2%}'
-
-            html += f'''
-            <div>
-                <div style="font-family: monospace; font-size: 0.65rem; color: #1E90FF; background: rgba(0,0,0,0.3); padding: 5px; border-radius: 4px; word-break: break-all; margin-bottom: 15px;">Fingerprint: {fid}</div>
-                <div style="text-align: center; margin-bottom: 20px;">
-                    <div style="font-size: 0.7rem; color: #888; text-transform: uppercase;">{lang_map["action_label"]}</div>
-                    <div style="font-size: 2.2rem; font-weight: 800; color: #00FFAA; text-shadow: 0 0 10px rgba(0,255,170,0.4);">{act}</div>
-                </div>
-                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                    <div style="flex: 1; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #444;">
-                        <div style="font-size: 0.6rem; color: #aaa;">EV (CUT)</div>
-                        <div style="font-size: 1.1rem; font-weight: bold; color: #fff;">{e_cut_pct}</div>
-                    </div>
-                    <div style="flex: 1; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #444;">
-                        <div style="font-size: 0.6rem; color: #aaa;">EV (CONT)</div>
-                        <div style="font-size: 1.1rem; font-weight: bold; color: #fff;">{e_cont_pct}</div>
-                    </div>
-                </div>
-                <div style="text-align: center; background: rgba(0,255,170,0.1); padding: 5px; border-radius: 20px; border: 1px solid #00FFAA33;">
-                    <span style="font-size: 0.8rem; color: #00FFAA; font-weight: bold;">{lang_map["edge_label"]}: {edge_pct}</span>
-                </div>
-            </div>
-            '''
-        else:
-            html += f'<div style="color:#FF4444; margin-top: 40px; text-align:center; font-size: 0.9rem;">⚠️ {fp_advice["status"]}</div>'
-
-        html += '</div>'
-
-        # 5. 渲染
-        st.markdown(html, unsafe_allow_html=True)
+            # 5. 渲染
+            st.markdown(html, unsafe_allow_html=True)

@@ -5,26 +5,31 @@ import streamlit as st
 from core.snapshot_engine import build_state_key
 
 # --- 核心适配器 ---
-
 class RedisAdapter:
     def __init__(self, redis_url):
-        # 强制开启 SSL 以适配 Upstash
-        self.client = redis.from_url(
-            redis_url, 
-            decode_responses=True,
-            ssl_cert_reqs=None
-        )
+        # 自动识别 rediss 协议并跳过证书验证
+        is_ssl = redis_url.startswith("rediss://")
+        if is_ssl:
+            self.client = redis.from_url(
+                redis_url, 
+                decode_responses=True,
+                ssl_cert_reqs=None  # 解决证书验证失败的关键
+            )
+        else:
+            self.client = redis.from_url(redis_url, decode_responses=True)
+
+
 
     def get_state_decision(self, state_hash):
         """
-        从 Redis 获取指纹决策数据 (fp:v8:xxx)
+        从 Redis 获取指纹决策数据 (保持原有逻辑)
         """
         try:
+            # 严格对齐 fp:v8: 前缀
             raw_val = self.client.get(f"fp:v8:{state_hash}")
             if not raw_val:
                 return None
             
-            # 解析脱水字符串: action|edge|ev_cut|ev_cont
             parts = raw_val.split('|')
             return {
                 "action": parts[0],
@@ -33,8 +38,9 @@ class RedisAdapter:
                 "ev_cont": float(parts[3])
             }
         except Exception as e:
-            print(f"Redis Query Error: {e}")
+            print(f"⚠️ Redis Query Error: {e}")
             return None
+        
 
 # --- 工具函数 ---
 
