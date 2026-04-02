@@ -7,45 +7,27 @@ from core.snapshot_engine import build_state_key
 # --- 核心适配器 ---
 class RedisAdapter:
     def __init__(self, redis_url):
-        # 自动识别 rediss 协议并跳过证书验证
-        is_ssl = redis_url.startswith("rediss://")
-        if is_ssl:
-            self.client = redis.from_url(
-                redis_url, 
-                decode_responses=True,
-                ssl_cert_reqs=None  # 解决证书验证失败的关键
-            )
-        else:
-            self.client = redis.from_url(redis_url, decode_responses=True)
-
+        import redis
+        # 必须包含这三个关键参数
+        self.client = redis.from_url(
+            redis_url, 
+            decode_responses=True, 
+            ssl_cert_reqs=None
+        )
 
     def get_state_decision(self, state_hash):
-    full_key = f"fp:v8:{state_hash}"
-    try:
-        # 1. 先看能不能拿到原始数据
-        raw_val = self.client.get(full_key)
-        
-        # 2. 在 Streamlit 界面直接弹窗显示查询结果（仅限调试）
-        import streamlit as st
-        if raw_val:
-            st.success(f"DEBUG: 线上查到了！Key={full_key[:10]}..., Val={raw_val}")
-        else:
-            # 如果这里显示 None，说明 Upstash 真的没有这个 Key
-            st.warning(f"DEBUG: Upstash 没查到 Key: {full_key}")
-            
-        if not raw_val: return None
-        # ... 原有 split 逻辑
-    except Exception as e:
-        st.error(f"DEBUG: Redis 查询崩溃: {e}")
-        return None
-    
-    def get_state_decision_(self, state_hash):
+        """
+        从 Redis 获取指纹决策数据
+        """
         try:
+            # 这里的 Key 构造必须与你之前命令行 keys 查出来的一致
             full_key = f"fp:v8:{state_hash}"
             raw_val = self.client.get(full_key)
+            
             if not raw_val:
                 return None
             
+            # 解析数据: ACTION|EDGE|EV_CUT|EV_CONT
             parts = raw_val.split('|')
             return {
                 "action": parts[0],
@@ -54,6 +36,8 @@ class RedisAdapter:
                 "ev_cont": float(parts[3])
             }
         except Exception as e:
+            # 方便在线上日志中查看错误
+            print(f"Redis Error: {e}")
             return None
 
 # --- 工具函数 ---
