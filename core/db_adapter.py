@@ -43,9 +43,9 @@ class RedisAdapter:
 
 # --- 工具函数 ---
 def generate_fp_hash(c_side, c_len, hB_f, hP_f, h_min):
-    """
-    生成指纹哈希（强制排序版）
-    """
+    import json
+    import hashlib
+    
     payload = {
         "side": c_side,
         "len": c_len,
@@ -53,11 +53,11 @@ def generate_fp_hash(c_side, c_len, hB_f, hP_f, h_min):
         "hP": hP_f,
         "h_min": h_min
     }
-    # 这一行就是报错来源，现在有了 import json 就好了
-    data_str = json.dumps(payload, sort_keys=True)
+    
+    # 🚨 关键：sort_keys 解决顺序问题，separators=(',', ':') 彻底剔除环境空格差异
+    data_str = json.dumps(payload, sort_keys=True, separators=(',', ':'))
+    
     return hashlib.sha256(data_str.encode()).hexdigest()
-
-
 
 # --- 兼容性封装 (线上版本主要调用这个) ---
 
