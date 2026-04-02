@@ -21,29 +21,21 @@ from core.sbi_full_model import compute_sbi_ev_from_counts
 def render_practice_tab(lang):
     """
     100% 还原原始测试版本的练习模块
-    """
-    # === 新增代码开始：Redis 动态初始化与切换逻辑 ===
+        """
+    # 1. 获取开关，默认为 False
     use_cloud = st.secrets.get("USE_CLOUD_REDIS", False)
-    # 确保 secrets 里有这两个 Key，否则会报错
-    redis_url = st.secrets["UPSTASH_REDIS_URL"] if use_cloud else st.secrets["LOCAL_REDIS_URL"]
 
-    # 检查配置是否发生变化（防止本地改了配置但 Session 没更新）
-    if 'last_used_url' not in st.session_state or st.session_state.last_used_url != redis_url:
-        if 'redis_adapter' in st.session_state:
-            del st.session_state.redis_adapter
-        st.session_state.last_used_url = redis_url
+    # 2. 安全获取 URL：如果连云端，取 UPSTASH；如果连本地，取 LOCAL (若本地配置不存在则用默认值)
+    if use_cloud:
+        redis_url = st.secrets.get("UPSTASH_REDIS_URL")
+    else:
+        # 线上环境如果没有 LOCAL_REDIS_URL，赋予一个默认值防止崩溃
+        redis_url = st.secrets.get("LOCAL_REDIS_URL", "redis://localhost:6379/0")
 
-    # 初始化或重新创建 Adapter
-    if 'redis_adapter' not in st.session_state:
-        from core.db_adapter import RedisAdapter
-        st.session_state.redis_adapter = RedisAdapter(redis_url)
-        # 给用户一个直观的反馈
-        st.toast(f"✅ 已连接至 {'Upstash 云端' if use_cloud else '本地'} Redis")
-    # === 新增代码结束 ===
-
-    # 原有的初始化逻辑（保持不变）
-    if 'clean_results' not in st.session_state:
-        st.session_state.clean_results = []
+    # 3. 检查必要的配置是否存在
+    if use_cloud and not redis_url:
+        st.error("❌ 线上模式已开启，但未检测到 UPSTASH_REDIS_URL 配置！")
+        st.stop()
 
     # tabs/tab_practice.py 内部初始化部分
     if 'clean_results' not in st.session_state:
