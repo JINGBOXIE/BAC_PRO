@@ -14,3 +14,4 @@ __pycache__/
 
 # 忽略系统文件
 .ipynb_checkpoints
+.streamlit/
