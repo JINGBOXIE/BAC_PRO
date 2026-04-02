@@ -19,8 +19,27 @@ class RedisAdapter:
             self.client = redis.from_url(redis_url, decode_responses=True)
 
 
-
     def get_state_decision(self, state_hash):
+    full_key = f"fp:v8:{state_hash}"
+    try:
+        # 1. 先看能不能拿到原始数据
+        raw_val = self.client.get(full_key)
+        
+        # 2. 在 Streamlit 界面直接弹窗显示查询结果（仅限调试）
+        import streamlit as st
+        if raw_val:
+            st.success(f"DEBUG: 线上查到了！Key={full_key[:10]}..., Val={raw_val}")
+        else:
+            # 如果这里显示 None，说明 Upstash 真的没有这个 Key
+            st.warning(f"DEBUG: Upstash 没查到 Key: {full_key}")
+            
+        if not raw_val: return None
+        # ... 原有 split 逻辑
+    except Exception as e:
+        st.error(f"DEBUG: Redis 查询崩溃: {e}")
+        return None
+    
+    def get_state_decision_(self, state_hash):
         try:
             full_key = f"fp:v8:{state_hash}"
             raw_val = self.client.get(full_key)
