@@ -355,6 +355,9 @@ def render_practice_tab(lang):
             h_min = 3 
             fp_advice = {"match": False, "status": "WAITING"}
 
+            
+            # tabs/tab_practice.py
+
             if clean_seq:
                 c_side, c_len, hB_raw, hP_raw = get_fp_components(clean_seq)
                 hB_f = {k: v for k, v in hB_raw.items() if int(k) >= h_min}
@@ -362,8 +365,14 @@ def render_practice_tab(lang):
 
                 if hB_f or hP_f:
                     state_hash = generate_fp_hash(c_side, c_len, hB_f, hP_f, h_min)
-                    #st.write(f"正在查询的完整 Key: fp:v8:{state_hash}")
+                    
+                    # --- 🔴 关键调试代码开始 ---
+                    # 这行会把线上生成的完整 Key 直接显示在 UI 上，方便你复制对比
+                    st.info(f"DEBUG - 实时生成的 Key: `fp:v8:{state_hash}`")
+                    # --- 🔴 关键调试代码结束 ---
+
                     decision = st.session_state.redis_adapter.get_state_decision(state_hash)
+                    
                     
                     if decision:
                         fp_advice = {
