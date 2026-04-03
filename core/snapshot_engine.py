@@ -254,3 +254,30 @@ def get_fp_components(results: list):
                 target[l_str] = target.get(l_str, 0) + 1
 
     return cur_side, cur_len, hist_B, hist_P
+
+def apply_v8_sampling_logic(raw_dist):
+    """
+    V8 核心采样逻辑：End-Length Filter
+    只有当 ge[k] > ge[k+1] 时，说明长度为 k 的连路在此处'死亡'（跳了），
+    这才是数据库 premax_state_ev 统计的物理特征。
+    """
+    if not raw_dist:
+        return {}
+        
+    # 将 key 转为整数并排序
+    sorted_keys = sorted([int(k) for k in raw_dist.keys()])
+    v8_dist = {}
+    
+    for i in range(len(sorted_keys)):
+        k = sorted_keys[i]
+        curr_val = raw_dist[str(k)]
+        
+        # 获取下一个长度的值，如果没有则视为 0
+        next_key = str(sorted_keys[i+1]) if i+1 < len(sorted_keys) else None
+        next_val = raw_dist[next_key] if next_key else 0
+        
+        # 物理对齐公式：只有当前累计值大于后一档累计值，才存在物理终点
+        if curr_val > next_val:
+            v8_dist[str(k)] = curr_val - next_val
+            
+    return v8_dist
