@@ -2,7 +2,9 @@
 import streamlit as st
 import os
 import sys
-
+from tabs.tab_practice import render_practice_tab
+from tabs.tab_ai_vision import render_ai_vision_tab  
+from tabs.tab_bacc_knowledge import render_knowledge_tab
 # 1. 路径注入，确保能导入所有子目录
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
@@ -79,15 +81,22 @@ with st.sidebar:
         label_visibility="collapsed"
     )
 
-# 5. 路由分发 (100% 隔离各个 Tab 的逻辑)
+# --- 5. 路由分发 (100% 隔离各个 Tab 的逻辑) ---
+# 1. 首先确保在 main.py 顶部导入了函数
+
+
+# ... 中间的 sidebar 代码保持不变 ...
+
+# 5. 路由分发 (确保这里没有多余的 st.header 干扰渲染)
 if choice == t("nav_practice", st.session_state.lang):
-    # 调用转换后的练习模块，传入当前语言
     render_practice_tab(st.session_state.lang)
 
 elif choice == t("nav_ai", st.session_state.lang):
-    st.header(t("nav_ai", st.session_state.lang))
-    st.info("AI 实战视觉模块正在接入中..." if st.session_state.lang == "CN" else "AI Vision Module connecting...")
+    # 这里也可以改为调用 tab_ai_vision.py
+    from tabs.tab_ai_vision import render_ai_vision_tab
+    render_ai_vision_tab(st.session_state.lang)
 
 elif choice == t("nav_knowledge", st.session_state.lang):
-    st.header(t("nav_knowledge", st.session_state.lang))
-    st.markdown("### 简单与专注 (Simplicity & Focus)")
+    # ✅ 关键点：直接调用函数。不要在这里写 st.header，
+    # 因为标题已经在 tab_bacc_knowledge.py 内部处理了。
+    render_knowledge_tab(st.session_state.lang)

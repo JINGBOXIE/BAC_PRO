@@ -1,3 +1,5 @@
+## 必须将本文件复制到项目根目录 BAC_PRO下 fingerprint_redis_connection_test.py
+
 import streamlit as st
 import pandas as pd
 import redis
@@ -5,6 +7,17 @@ import time
 from itertools import groupby
 from core.snapshot_engine import get_fp_components, apply_v8_sampling_logic
 from core.db_adapter import RedisAdapter, generate_fp_hash
+import sys
+import os
+from pathlib import Path
+
+# 定位到当前脚本的祖父目录（即 BAC_PRO 根目录）
+root_repo = Path(__file__).resolve().parent.parent
+if str(root_repo) not in sys.path:
+    sys.path.insert(0, str(root_repo))
+
+# 现在你可以优雅地导入 core 了
+from core.snapshot_engine import get_fp_components, apply_v8_sampling_logic
 
 def main():
     st.set_page_config(page_title="V8 物理链路审计", layout="wide")

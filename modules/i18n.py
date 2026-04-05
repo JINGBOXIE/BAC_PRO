@@ -1,10 +1,12 @@
 # modules/i18n.py
+# i18n.py
+
 
 TRANSLATIONS = {
     "CN": {
         "new_shoe": "开启新靴",
         "nav_practice": "🧠 策略训练",
-        "nav_ai": "⚡ AI 实战分析",
+        "nav_ai": "⚡ AI 视觉决策",
         "nav_knowledge": "📖 百家乐常识",
         "welcome": "简单与专注",
         "lang_switch": "语言选择 / Language",
