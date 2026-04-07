@@ -1,0 +1,8 @@
+streamlit
+redis
+pandas
+numpy
+altair
+beautifulsoup4
+yfinance
+google-generativeai
