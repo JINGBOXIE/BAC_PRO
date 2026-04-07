@@ -1,8 +1,7 @@
 streamlit
-redis
+redis>=7.4.0
 pandas
 numpy
-altair
-beautifulsoup4
 yfinance
 google-generativeai
+beautifulsoup4
