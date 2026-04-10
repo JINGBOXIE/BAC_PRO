@@ -2,19 +2,49 @@ import redis
 import json
 import hashlib
 from core.snapshot_engine import build_state_key  # 核心：必须调用这个函数
+# core/db_adapter.py
+
 class RedisAdapter:
     def __init__(self, redis_url):
-        """
-        初始化 Redis 连接 - 已移除兼容性冲突参数
-        """
         try:
-            # 移除 ssl_cert_reqs 以兼容旧版 redis-py
+            # 加入 ssl_cert_reqs=None 以跳过证书校验
             self.client = redis.from_url(
                 redis_url, 
-                decode_responses=True
+                decode_responses=True,
+                ssl_cert_reqs=None  # ✨ 关键：修复 [SSL: CERTIFICATE_VERIFY_FAILED]
             )
         except Exception as e:
             print(f"Redis Connection Error: {e}")
+            
+    # --- ✨ 新增：专门查询 Entropy JSON 数据的函数 ---
+    def get_entropy_decision(self, rk_id):
+        """
+        专门用于查询线上 E: 开头的 JSON 字符串指纹
+        """
+        try:
+            # 自动补全前缀，确保与线上 E:000000000000000000 格式一致
+            target_key = f"E:{rk_id}" if not rk_id.startswith("E:") else rk_id
+            
+            raw_data = self.client.get(target_key)
+            #st.toast(f"Searching: {target_key}")
+            
+            if raw_data:
+                # 解析终端测试看到的 JSON 格式: {"a": "N", "eb": -0.0106, ...}
+                data = json.loads(raw_data)
+                
+                # 转换线上简写字段名为程序使用的标准字段名
+                # a -> action, t -> tier, eb -> ev_cut, ep -> ev_cont
+                return {
+                    "action": data.get("a", "N"),
+                    "edge": max(float(data.get("ep", 0)), float(data.get("eb", 0))),
+                    "ev_cut": float(data.get("eb", 0)),
+                    "ev_cont": float(data.get("ep", 0)),
+                    "tier": data.get("t", "N")
+                }
+            return None
+        except Exception as e:
+            print(f"Entropy Query Error: {e}")
+            return None
     
     def get_state_decision(self, state_hash):
         """

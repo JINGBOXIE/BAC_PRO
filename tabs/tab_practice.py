@@ -4,7 +4,7 @@ import sys
 import pandas as pd
 import random
 import redis
-
+import time  # <--- 添加这一行
 # 1. 路径注入
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
@@ -21,30 +21,13 @@ from core.sbi_full_model import compute_sbi_ev_from_counts
 from core.snapshot_engine import get_fp_components
 from core.db_adapter import RedisAdapter, generate_fp_hash 
 def render_practice_tab(lang):
+    # 临时代码：强制清除旧连接（运行一次后请删除）
 
-    # --- 1. 全局 UI 样式配置 (放在这里) ---
-    container_style = """
-        padding: 18px; 
-        border: 2px solid #1E90FF; 
-        border-radius: 15px; 
-        background-color: rgba(10, 20, 30, 0.6); 
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3); 
-        min-height: 250px; 
-        font-family: sans-serif;
-    """
-
-    header_style = """
-        font-weight: bold; 
-        color: #1E90FF; 
-        font-size: 1.1rem; 
-        letter-spacing: 1px; 
-        margin-bottom: 12px; 
-        border-bottom: 1px solid #1E90FF44; 
-        padding-bottom: 8px; 
-        display: flex; 
-        justify-content: space-between; 
-        align-items: center;
-    """
+    # --- 1. 样式扁平化处理 (杜绝 Markdown 干扰) ---
+    # 显式使用深色背景 (#0a141e) 和 纯白文字 (#FFFFFF)
+    container_style = "padding:18px;border:2px solid #1E90FF;border-radius:15px;background-color:#0a141e;box-shadow:0 4px 15px rgba(0,0,0,0.5);min-height:320px;color:#FFFFFF;display:flex;flex-direction:column;box-sizing:border-box;"
+    
+    header_style = "font-weight:bold;color:#1E90FF;font-size:1.1rem;letter-spacing:1px;margin-bottom:12px;border-bottom:1px solid #1E90FF44;padding-bottom:8px;display:flex;justify-content:space-between;align-items:center;"
 
     # tabs/tab_practice.py 内部初始化部分
     if 'clean_results' not in st.session_state:
@@ -357,140 +340,140 @@ def render_practice_tab(lang):
 
     st.divider()
 
+
+
     
-    # --- 7. 双核诊断面板 ---
+    # --- 7. 双核诊断面板 (完全修复显示问题版) ---
+        # ==========================================
+    # 1. 物理连接单点锁定 (全局唯一初始化)
+    # ==========================================
+    use_cloud = st.secrets.get("USE_CLOUD_REDIS", False)
+    current_mode_str = "CLOUD" if use_cloud else "LOCAL"
+
+    # 核心同步逻辑：检测到模式切换（本地转云端或反之），立即销毁旧实例
+    if 'last_redis_mode' in st.session_state and st.session_state.last_redis_mode != current_mode_str:
+        st.session_state.pop('redis_adapter', None)
+        print(f"🔄 [GLOBAL] 模式强制同步: {st.session_state.last_redis_mode} -> {current_mode_str}")
+
+    # 执行单点初始化
+    if 'redis_adapter' not in st.session_state:
+        try:
+            target_url = st.secrets["UPSTASH_REDIS_URL"] if use_cloud else st.secrets["LOCAL_REDIS_URL"]
+            st.session_state.redis_adapter = RedisAdapter(target_url)
+            st.session_state.last_redis_mode = current_mode_str
+            # 仅在第一次或重连时打印，减少日志干扰
+            print(f"📡 [CONN] 已锁定物理连接: {current_mode_str}")
+        except Exception as e:
+            st.error(f"❌ Redis 物理连接建立失败: {e}")
+
+
+    
+    
+    unified_blue = "#1E90FF"
+    
+    # 强制单行样式定义，避免换行符干扰 Markdown 渲染
+    c_style = "background-color:#0a141e;border:1px solid #444;border-radius:10px;padding:20px;min-height:320px;display:flex;flex-direction:column;width:100%;box-sizing:border-box;color:#ffffff;"
+    
     col_left, col_right = st.columns(2)
+    
     with col_left:
-            # A. 生成 18位 Key
-            out_rk_list = [f"{(32 - st.session_state.rank_counts.get(i, 32)):02d}" for i in range(1, 10)]
-            current_rk = "".join(out_rk_list).strip()
+        # 1. 语言与标签初始化
+        is_cn = st.session_state.get('lang', 'CN') == "CN"
+        label_theoretical = "权重分布模型 (SBI)" if is_cn else "RANK Distribution Model(SBI)"
+        label_historical = "熵值指纹模型" if is_cn else "Entropy Fingerprinting Model"
+        label_init = "【初始状态】已就绪" if is_cn else "[INITIAL STATE] Ready"
+        label_miss = "牌组序列呈现随机游走，无显著 EV 信号。"
+        label_miss_en = "Card sequence shows a random walk; no significant EV signal detected."
+        display_title = "🎯 双核算牌引擎追踪" if is_cn else "🎯 DUAL-CORE RANK-BIAS ENGINE TRACKING"
+        
+        # 2. Redis 连接检查 (已在 main.py 统一定义，此处仅引用)
+        use_cloud = st.secrets.get("USE_CLOUD_REDIS", False)
+        adapter = st.session_state.get('redis_adapter')
+
+        # 3. 生成 18 位指纹 ID
+        counts = st.session_state.get('rank_counts', {i: 32 for i in range(1, 10)})
+        out_rk_list = [f"{(32 - counts.get(i, 32)):02d}" for i in range(1, 10)]
+        current_rk = "".join(out_rk_list).zfill(18)
+        is_initial = (current_rk == "000000000000000000")
+
+        # 4. 执行深度查询 (使用新增所在的 get_entropy_decision)
+        # 计算理论 SBI
+        sbi = compute_sbi_ev_from_counts(8, counts)
+        
+        # 获取历史 Entropy 数据
+        decision = None
+        if adapter:
+            # 直接调用你新增的专用函数
+            decision = adapter.get_entropy_decision(current_rk)
             
-            # B. 加载数据
-            if 'golden_pool' not in st.session_state or not st.session_state.golden_pool:
-                try:
-                    import json
-                    import os
-                    current_dir = os.path.dirname(os.path.abspath(__file__))
-                    json_path = os.path.join(current_dir, "bac_rank_bias_gold.json")
-                    if os.path.exists(json_path):
-                        with open(json_path, "r") as f:
-                            raw_data = json.load(f)
-                            st.session_state.golden_pool = {str(item['rank_state_key']).strip(): item for item in raw_data}
-                    else:
-                        st.session_state.golden_pool = {}
-                except:
-                    st.session_state.golden_pool = {}
 
-            # C. 获取数据与多语言定义
-            is_cn = st.session_state.lang == "CN"
-            label_theoretical = "理论模型 (SBI)" if is_cn else "THEORETICAL (SBI)"
-            label_historical = "大数据字典 (DICT)" if is_cn else "HISTORICAL (DICT)"
-            label_init = "初始状态" if is_cn else "INITIAL STATE"
-            label_miss = "未命中" if is_cn else "MISS"
-            display_title = "🎯 双核算牌分析" if is_cn else "🎯 RANK BIAS DUAL-CORE"
 
-            # D. 计算 SBI 算法核心
-            sbi_res = compute_sbi_ev_from_counts(total_decks=8, rank_counts=st.session_state.rank_counts)
-            sbi_p = sbi_res.get('ev_p', -0.0124) * 100
-            sbi_b = sbi_res.get('ev_b_comm', -0.0106) * 100
-            
-            gold_match = st.session_state.golden_pool.get(current_rk)
-            
-            # E. 状态逻辑判定
-            if gold_match:
-                dict_p, dict_b = gold_match.get('ev_p', 0) * 100, gold_match.get('ev_b', 0) * 100
-                sample_size = gold_match.get('sample_size', 0)
-                dict_status = f"HIT (n={sample_size:,.0f})"
-                dict_color, val_style = "#FFD700", "color: #FFD700; font-weight: bold;"
-            elif current_rk == "000000000000000000":
-                dict_p, dict_b = -1.24, -1.06
-                dict_status = label_init
-                dict_color, val_style = "#00FFAA", "color: #ffffff;"
-            else:
-                dict_p, dict_b = 0.0, 0.0
-                dict_status = f"{label_miss} (DB:{len(st.session_state.golden_pool)})"
-                dict_color, val_style = "#888888", "color: #666666;"
+        # 5. 状态与颜色渲染逻辑
+        if decision:
+            # 从新函数返回的对象中提取字段
+            ev_p_txt = f"{decision['ev_cont']*100:+.2f}%"
+            ev_b_txt = f"{decision['ev_cut']*100:+.2f}%"
+            act_name = {"B": "B", "P": "P"}.get(decision['action'], decision['action'])
+            status = f"{'方向' if is_cn else 'SIDE'}: {act_name} | {'评级' if is_cn else 'Rate'}: {decision['tier']}"
+            status_color = "#00FFAA"
+        else:
+            ev_p_txt, ev_b_txt = "n/a", "n/a"
+            status = label_init if is_initial else (label_miss if is_cn else label_miss_en)
+            status_color = "#FFAA00" if is_initial else "#A0A4B8"
 
-            # F. 构建纯净 HTML 字符串 (杜绝换行符和非法空格导致的渲染失败)
-            h = f'<div style="{container_style}">'
-            h += f'<div style="{header_style}"><span>{display_title}</span>'
-            h += '<span style="font-size:0.6rem;color:#555;background:rgba(0,0,0,0.2);padding:2px 6px;border-radius:4px;">SBI-PRO</span></div>'
-            h += f'<div style="font-size:0.8rem;color:#aaa;margin-bottom:15px;font-family:\'Courier New\',monospace;background:rgba(255,255,255,0.07);padding:6px;border-radius:5px;border:1px solid #444;">'
-            h += f'Fingerprint: <span style="color:#00FFAA;">{current_rk}</span></div>'
-            h += f'<div style="margin-bottom:18px;border-left:4px solid #1E90FF;padding-left:12px;">'
-            h += f'<div style="font-size:0.7rem;color:#1E90FF;font-weight:bold;letter-spacing:1px;">{label_theoretical}</div>'
-            h += f'<div style="font-size:1.2rem;margin-top:3px;"><span style="color:#ffffff;">P: {sbi_p:+.2f}%</span> | <span style="color:#ffffff;">B: {sbi_b:+.2f}%</span></div></div>'
-            h += f'<div style="border-left:4px solid {dict_color};padding-left:12px;">'
-            h += f'<div style="font-size:0.7rem;color:{dict_color};font-weight:bold;letter-spacing:1px;">{label_historical} - {dict_status}</div>'
-            h += f'<div style="font-size:1.2rem;margin-top:3px;{val_style}"><span>P: {dict_p:+.2f}%</span> | <span>B: {dict_b:+.2f}%</span></div></div></div>'
+        # 6. 构造 HTML (UI 保持一致)
+        h = f'<div style="{c_style}">'
+        h += f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;border-bottom:1px solid #333;padding-bottom:10px;"><span style="color:{unified_blue};font-weight:bold;font-size:1rem;">{display_title}</span><span style="font-size:0.6rem;color:#ffffff;background:rgba(30,144,255,0.3);padding:2px 6px;border-radius:4px;">PRO-{"ONLINE" if use_cloud else "LOCAL"}</span></div>'
 
-            # G. 强制清洗并渲染 (关键步骤)
-            clean_h = h.replace('\xa0', ' ').replace('\n', '').strip()
-            st.markdown(clean_h, unsafe_allow_html=True)              
+        # 🟢 核心修改点：调整 size、color 及 padding 以完全对齐 col_right
+        display_rk = "READY" if is_initial else current_rk
+        h += f'<div style="font-size:0.65rem;color:#FFFFFF;margin-bottom:15px;font-family:monospace;background:rgba(0,0,0,0.4);padding:5px 10px;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">🫆{display_rk}</div>'
+
+        h += f'<div style="display:flex;flex-direction:column;gap:18px;">'
+        h += f'<div style="border-left:4px solid {unified_blue};padding-left:12px;"><div style="font-size:0.7rem;color:{unified_blue};font-weight:bold;">{label_theoretical}</div><div style="font-size:1.3rem;margin-top:4px;color:#ffffff;font-family:monospace;font-weight:bold;">P: {sbi["ev_p"]*100:+.2f}% | B: {sbi["ev_b_comm"]*100:+.2f}%</div></div>'
+        h += f'<div style="border-left:4px solid {unified_blue};padding-left:12px;"><div style="font-size:0.7rem;color:{unified_blue};font-weight:bold;">{label_historical}</div><div style="font-size:1.3rem;margin-top:4px;color:#ffffff;font-family:monospace;font-weight:bold;">P: {ev_p_txt} | B: {ev_b_txt}</div><div style="font-size:0.7rem;color:{status_color};margin-top:4px;line-height:1.2;">{status}</div></div>'
+        h += '</div></div>'
+
+        st.markdown(h, unsafe_allow_html=True)
+
     with col_right:
-            # 1. 语言配置
-            is_cn = st.session_state.get('lang', 'CN') == 'CN'
-            lang_map = {
-                "title": "🔍 AI FINGERPRINT SCANNING" if not is_cn else "🔍 AI 指纹扫描决策",
-                "waiting": "Waiting for shuffling..." if not is_cn else "等待新靴开牌...",
-                "action_label": "Best Action" if not is_cn else "最优决策",
-                "edge_label": "Edge Advantage" if not is_cn else "优势概率",
-                "insufficient": "DEPTH INSUFFICIENT" if not is_cn else "序列深度不足",
-                "miss": "FINGERPRINT MISS" if not is_cn else "未匹配到有效指纹",
-            }
+        # 1. 基础配置与语言映射
+        is_cn = st.session_state.get('lang', 'CN') == 'CN'
+        lang_map = {
+            # 🟢 锁定方案：格阵指纹 (Grid-ID)
+            "title": "🔍 AI 格阵指纹扫描" if is_cn else "🔍 AI Pattern Fingerprint SCANNING",
+            "waiting": "Waiting for data..." if not is_cn else "等待数据中...",
+            "action_label": "Best Action" if not is_cn else "最优决策",
+            "edge_label": "Edge Advantage" if not is_cn else "优势概率",
+            "insufficient": "DEPTH INSUFFICIENT..." if not is_cn else "序列深度不足...",
+            # 🟢 锁定方案：迷雾区提示
+            "miss": "走势进入“迷雾区”，数据库建议规避风险。" if is_cn else "Pattern entered the 'Fog Zone'. AI suggests risk avoidance.",
+        }
 
-            # 核心逻辑导入
-            
+        # 2. 状态逻辑初始化 (必须在 HTML 拼接前完成)
+        clean_seq = st.session_state.get('clean_results', [])
+        h_min = st.session_state.get('hist_min', 3) 
+        fp_advice = {"match": False, "status": "WAITING", "fp_id": ""}
+        
+        # 获取由 col_left 已经统一初始化好的连接
+        adapter = st.session_state.get('redis_adapter')
 
-            # 2. Redis 连接初始化 (集成环境切换逻辑)
-            if 'redis_adapter' not in st.session_state:
-                try:
-                    use_cloud = st.secrets.get("USE_CLOUD_REDIS", False)
-                    target_url = st.secrets["UPSTASH_REDIS_URL"] if use_cloud else st.secrets["LOCAL_REDIS_URL"]
-                    st.session_state.redis_adapter = RedisAdapter(target_url)
-                    
-                    mode_msg = "Online" if use_cloud else "Local"
-                    st.toast(f"Connected to {mode_msg} Redis")
-                except Exception as e:
-                    st.error(f"Redis Connection Error: {e}")
+        if clean_seq:
+            # 🚀 A. 一站式整理 5 要素
+            components = get_fp_components(clean_seq, h_min=h_min)
+            c_side, c_len, hB_f, hP_f, _ = components 
 
-            # 3. 变量初始化 (物理对齐修复，防止 UnboundLocalError)
-            clean_seq = st.session_state.get('clean_results', [])
-            h_min = st.session_state.get('hist_min', 3)  # 这样它就会实时同步侧边栏的滑动数值  # 采样器门槛
-            fp_advice = {"match": False, "status": "WAITING"}
-            
-            # 🟢 像素对齐修改：引用全局外壳变量
-            html = f'<div style="{container_style}">'
-            html += f'''<div style="{header_style}">
-                        <span>{lang_map["title"]}</span><span style="font-size: 0.6rem; color: #555; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px;">V8-PRO</span>
-                      </div>'''
-
-            
-               # --- 4. 状态逻辑处理 (V8 极致物理对齐版) ---
-            # 初始化变量，防止 UnboundLocalError
-            state_hash = None 
-            fp_advice = {"match": False, "status": "WAITING", "fp_id": ""}
-
-            if clean_seq:
-                # 🚀 A. 一站式整理 (整理工厂)
-                # 内部已包含：物理隔离、归口处理、生存统计(>=LEN)、H_MIN过滤
-                components = get_fp_components(clean_seq, h_min=h_min)
-                c_side, c_len, hB_f, hP_f, _ = components # 结构化解包
-
-                # 🚀 B. 约束检查
-                # 只有当历史区在 H_MIN 以上确实存在数据时才继续
-                if not hB_f and not hP_f:
-                    fp_advice.update({
-                        "status": lang_map["insufficient"],
-                        "fp_id": "SCOPE_BELOW_THRESHOLD"
-                    })
-                else:
-                    # 🚀 C. 计算 (直接使用 * 解包 5 要素，物理对齐)
-                    state_hash = generate_fp_hash(*components)
-                    
-                    # 🚀 D. 执行 Redis 查询
-                    decision = st.session_state.redis_adapter.get_state_decision(state_hash)
-
+            # 🚀 B. 约束检查：只有历史区存在数据才计算
+            if not hB_f and not hP_f:
+                fp_advice.update({"status": lang_map["insufficient"], "fp_id": "Insufficient data..."})
+            else:
+                # 🚀 C. 物理对齐生成 Hash
+                state_hash = generate_fp_hash(*components)
+                
+                # 🚀 D. 执行查询
+                if adapter:
+                    # 使用针对 Hash 结构的专用查询函数
+                    decision = adapter.get_state_decision(state_hash)
                     if decision:
                         fp_advice.update({
                             "match": True,
@@ -500,77 +483,58 @@ def render_practice_tab(lang):
                             "ev_cont": decision["ev_cont"],
                             "fp_id": state_hash
                         })
-                        
-                        # 🎈 特效触发器
+                        # 触发特效
                         if st.session_state.get("last_balloon_hash") != state_hash:
                             st.balloons()
                             if decision["edge"] > 0.01: st.snow()
                             st.session_state.last_balloon_hash = state_hash
                     else:
-                        fp_advice.update({
-                            "status": lang_map["miss"], 
-                            "fp_id": state_hash
-                        })
+                        fp_advice.update({"status": lang_map["miss"], "fp_id": state_hash})
 
-                # --- 调试打印 (清晰简练) ---
-                print("\n" + "⚡" * 25)
-                print(f"🔍 [V8-DEBUG] H_MIN: {h_min} | CUR: {c_side}{c_len}")
-                print(f"📊 B_f: {hB_f}")
-                print(f"📊 P_f: {hP_f}")
-                print(f"🔑 HASH: {state_hash}")
-                print(f"🏁 STATUS: {fp_advice['status']}")
-                print("⚡" * 25 + "\n")
-                
-                # --- 5. HTML 内容填充逻辑 ---
-            if not fp_advice.get('match') and fp_advice.get('status') == 'WAITING':
-                # 🟢 像素对齐微调：居中内边距
-                html += f'<div style="color:#666; text-align:center; padding-top: 50px;">{lang_map["waiting"]}</div>'
-            
-            elif fp_advice.get('match'):
-                fid = fp_advice["fp_id"]
-                act = fp_advice["action"]
-                edge_pct = f'{fp_advice["edge"]:+.2%}'
-                e_cut_pct = f'{fp_advice["ev_cut"]*100:+.2f}%'
-                e_cont_pct = f'{fp_advice["ev_cont"]*100:+.2f}%'
+        # 3. 最终 UI 渲染 (严格像素对齐)
+        html = f'<div style="{container_style}">'
+        html += f'<div style="{header_style}"><span>{lang_map["title"]}</span><span style="font-size:0.6rem;color:#FFFFFF;background:rgba(0,0,0,0.2);padding:2px 6px;border-radius:4px;">AI ONLINE</span></div>'
+        
+        # --- 🚀 调整位置：将指纹 ID 行提到所有状态逻辑之前，实现与 col_left 物理对齐 ---
+        fid_display = fp_advice.get("fp_id", "") if fp_advice.get("fp_id") else "READY"
+        html += f'<div style="font-family:monospace;font-size:0.65rem;color:#FFFFFF;background:rgba(0,0,0,0.3);padding:5px 10px;border-radius:4px;margin-bottom:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">🫆{fid_display}</div>'
 
-                html += f'''
+        if not fp_advice.get('match') and fp_advice.get('status') == 'WAITING':
+            html += f'<div style="color:#666;text-align:center;padding-top:80px;">{lang_map["waiting"]}</div>'
+        
+        elif fp_advice.get('match'):
+            act = fp_advice["action"]
+            edge_pct = f'{fp_advice["edge"]:+.2%}'
+            e_cut_pct, e_cont_pct = f'{fp_advice["ev_cut"]*100:+.2f}%', f'{fp_advice["ev_cont"]*100:+.2f}%'
+
+            html += f'''
                 <div>
-                    <div style="font-family: monospace; font-size: 0.65rem; color: #1E90FF; background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 4px; margin-bottom: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{fid}">
-                        Fingerprint: {fid}
+                    <div style="text-align:center;margin-bottom:15px;">
+                        <div style="font-size:0.7rem;color:#888;text-transform:uppercase;">{lang_map["action_label"]}</div>
+                        <div style="font-size:2.2rem;font-weight:800;color:#00FFAA;text-shadow:0 0 10px rgba(0,255,170,0.4);">{act}</div>
                     </div>
-                    <div style="text-align: center; margin-bottom: 15px;">
-                        <div style="font-size: 0.7rem; color: #888; text-transform: uppercase;">{lang_map["action_label"]}</div>
-                        <div style="font-size: 2.2rem; font-weight: 800; color: #00FFAA; text-shadow: 0 0 10px rgba(0,255,170,0.4);">{act}</div>
-                    </div>
-                    <div style="display: flex; gap: 10px; margin-bottom: 12px;">
-                        <div style="flex: 1; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #444;">
-                            <div style="font-size: 0.6rem; color: #aaa;">EV (CUT)</div>
-                            <div style="font-size: 1.0rem; font-weight: bold; color: #fff;">{e_cut_pct}</div>
+                    <div style="display:flex;gap:10px;margin-bottom:12px;">
+                        <div style="flex:1;background:rgba(255,255,255,0.05);padding:8px;border-radius:8px;text-align:center;border:1px solid #444;">
+                            <div style="font-size:0.6rem;color:#aaa;">EV (CUT)</div>
+                            <div style="font-size:1.0rem;font-weight:bold;color:#fff;">{e_cut_pct}</div>
                         </div>
-                        <div style="flex: 1; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #444;">
-                            <div style="font-size: 0.6rem; color: #aaa;">EV (CONT)</div>
-                            <div style="font-size: 1.0rem; font-weight: bold; color: #fff;">{e_cont_pct}</div>
+                        <div style="flex:1;background:rgba(255,255,255,0.05);padding:8px;border-radius:8px;text-align:center;border:1px solid #444;">
+                            <div style="font-size:0.6rem;color:#aaa;">EV (CONT)</div>
+                            <div style="font-size:1.0rem;font-weight:bold;color:#fff;">{e_cont_pct}</div>
                         </div>
                     </div>
-                    <div style="text-align: center; background: rgba(0,255,170,0.1); padding: 5px; border-radius: 20px; border: 1px solid #00FFAA33;">
-                        <span style="font-size: 0.8rem; color: #00FFAA; font-weight: bold;">{lang_map["edge_label"]}: {edge_pct}</span>
+                    <div style="text-align:center;background:rgba(0,255,170,0.1);padding:5px;border-radius:20px;border:1px solid #00FFAA33;">
+                        <span style="font-size:0.8rem;color:#00FFAA;font-weight:bold;">{lang_map["edge_label"]}: {edge_pct}</span>
                     </div>
                 </div>
-                '''
-            else:
-                # 🟢 像素对齐微调：居中内边距
-                html += f'''
-                <div style="margin-top: 45px; text-align:center;">
-                    <div style="color:#FF4444; font-size: 0.9rem; margin-bottom: 8px; font-weight:bold;">⚠️ {fp_advice["status"]}</div>
-                    <div style="font-family: monospace; font-size: 0.6rem; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 20px;" title="{fp_advice.get("fp_id","")}">
-                        ID: {fp_advice.get("fp_id","")}
-                    </div>
+            '''
+        else:
+            # 此时 ID 已在上方显示，下方仅保留文案
+            html += f'''
+                <div style="margin-top:40px;text-align:center;">
+                    <div style="color:#FF4444;font-size:0.9rem;margin-bottom:8px;font-weight:bold;">⚠️ {fp_advice["status"]}</div>
                 </div>
-                '''
+            '''
 
-            html += '</div>'
-            
-            # 6. 渲染到界面
-            st.markdown(html, unsafe_allow_html=True)
-
-
+        html += '</div>'
+        st.markdown(html, unsafe_allow_html=True)

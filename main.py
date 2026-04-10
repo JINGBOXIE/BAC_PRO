@@ -29,9 +29,12 @@ st.set_page_config(
     page_icon="🤖"
 )
 
+# main.py
 if "redis_adapter" not in st.session_state:
     st.session_state.redis_adapter = RedisAdapter(st.secrets["REDIS_URL"])
-    
+
+
+
 # 3. 初始化全局状态
 if 'lang' not in st.session_state:
     st.session_state.lang = "EN"
@@ -43,7 +46,7 @@ if 'menu_choice' not in st.session_state:
 # 4. 侧边栏布局
 with st.sidebar:
     # Logo 展示
-    st.image("J Studio LOGO.PNG", use_container_width=True)
+    st.image("assets/J Studio LOGO.PNG", use_container_width=True)
 
     # --- 语言选择器 ---
     lang_options = {"EN": "English", "CN": "中文"}
@@ -111,11 +114,11 @@ with st.sidebar:
     st.divider()
 
     # 签名展示
-    sig_b64 = get_base64_img("J Signature.png")
+    sig_b64 = get_base64_img("assets/J Signature.png")
     if sig_b64:
         st.markdown(
             f"""
-            <div style="display: flex; align-items: center; gap: 0px; font-size: 1.1rem; color: #1E90FF; font-family: sans-serif; font-weight: 500;">
+            <div style="display: flex; align-items: center; gap: 0px; font-size: 0.9rem; color: #1E90FF; font-family: sans-serif; font-weight: 500;">
                 <span style="white-space: nowrap; margin-top: 2px;">👨‍💻 Code & Design: &nbsp;&nbsp;&nbsp</span>
                 <img src="data:image/png;base64,{sig_b64}" 
                      style="height: 45px; margin-left: -5px; margin-bottom: -2px; filter: brightness(1.2) contrast(1.2);">
@@ -124,7 +127,7 @@ with st.sidebar:
             unsafe_allow_html=True
         )
     else:
-        st.markdown("<p style='color: #1E90FF; font-size: 1.3rem; font-weight: 500;'>👨‍💻 Code & Design: J Studio</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #1E90FF; font-size: 0.9rem; font-weight: 500;'>👨‍💻 Code & Design: J Studio</p>", unsafe_allow_html=True)
 
     st.caption("👑 Powered by Gemini AI & OpenAI")
 
