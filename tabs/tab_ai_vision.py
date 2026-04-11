@@ -223,37 +223,37 @@ def render_ai_vision_tab(lang):
     with col_dec:
         st.markdown(f"### " + ("🔍 决策分析" if is_cn else "🔍 DECISION ANALYSIS"))
         
-        # 渲染决策卡片
+        # --- 核心逻辑：从 Session 抓取数据并比对 ---
+        clean_seq = st.session_state.get('clean_results', [])
+        h_min = st.session_state.get('hist_min', 3)
+        adapter = st.session_state.get('redis_adapter')
+        fp_advice = {"match": False, "status": "WAITING", "fp_id": ""}
+        
+        if clean_seq:
+            components = get_fp_components(clean_seq, h_min=h_min)
+            state_hash = generate_fp_hash(*components)
+            if adapter:
+                decision = adapter.get_state_decision(state_hash)
+                if decision:
+                    fp_advice.update({"match": True, "action": decision["action"], "edge": decision["edge"], 
+                                    "ev_cut": decision["ev_cut"], "ev_cont": decision["ev_cont"], "fp_id": state_hash})
+                else:
+                    fp_advice.update({"status": lang_map["miss"], "fp_id": state_hash})
+
+        # --- UI 渲染渲染 ---
         html = f'<div style="{STYLE_DECISION}">'
         html += f'<div style="{STYLE_HEADER}"><span>{lang_map["title"]}</span><span style="font-size: 0.6rem; color: #555; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px;">V8-PRO</span></div>'
+        
+        fid_display = fp_advice.get("fp_id", "") if fp_advice.get("fp_id") else "READY"
+        html += f'<div style="font-family: monospace; font-size: 0.65rem; color: #1E90FF; background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 4px; margin-bottom: 12px; overflow: hidden; text-overflow: ellipsis;">🫆 {fid_display}</div>'
 
         if not fp_advice.get('match') and fp_advice.get('status') == 'WAITING':
             html += f'<div style="color:#666; text-align:center; padding-top: 80px;">{lang_map["waiting"]}</div>'
         elif fp_advice.get('match'):
-            fid = fp_advice["fp_id"]
-            edge_str = f'{fp_advice["edge"]:+.2%}'
-            html += f'''
-                <div>
-                    <div style="font-family: monospace; font-size: 0.65rem; color: #1E90FF; background: rgba(0,0,0,0.3); padding: 5px 10px; border-radius: 4px; margin-bottom: 12px; overflow: hidden; text-overflow: ellipsis;">Fingerprint: {fid}</div>
-                    <div style="text-align: center; margin-bottom: 15px;">
-                        <div style="font-size: 0.7rem; color: #888; text-transform: uppercase;">{lang_map["action_label"]}</div>
-                        <div style="font-size: 2.2rem; font-weight: 800; color: #00FFAA; text-shadow: 0 0 10px rgba(0,255,170,0.4);">{fp_advice["action"]}</div>
-                    </div>
-                    <div style="display: flex; gap: 10px; margin-bottom: 12px;">
-                        <div style="flex: 1; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #444;">
-                            <div style="font-size: 0.6rem; color: #aaa;">EV (CUT)</div><div style="font-size: 1.0rem; font-weight: bold; color: #fff;">{fp_advice["ev_cut"]*100:+.2f}%</div>
-                        </div>
-                        <div style="flex: 1; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px; text-align: center; border: 1px solid #444;">
-                            <div style="font-size: 0.6rem; color: #aaa;">EV (CONT)</div><div style="font-size: 1.0rem; font-weight: bold; color: #fff;">{fp_advice["ev_cont"]*100:+.2f}%</div>
-                        </div>
-                    </div>
-                    <div style="text-align: center; background: rgba(0,255,170,0.1); padding: 5px; border-radius: 20px; border: 1px solid #00FFAA33;">
-                        <span style="font-size: 0.8rem; color: #00FFAA; font-weight: bold;">{lang_map["edge_label"]}: {edge_str}</span>
-                    </div>
-                </div>
-            '''
+            # 这里按照 col_right 的 HTML 格式补全即可
+            html += f'<div style="text-align: center; margin-top: 20px;"><div style="font-size: 2.2rem; color: #00FFAA;">{fp_advice["action"]}</div></div>'
         else:
-            html += f'<div style="margin-top: 60px; text-align:center;"><div style="color:#FF4444; font-size: 0.9rem; margin-bottom: 8px; font-weight:bold;">⚠️ {fp_advice["status"]}</div><div style="font-family: monospace; font-size: 0.6rem; color: #555;">ID: {fp_advice.get("fp_id","")}</div></div>'
-
+            html += f'<div style="margin-top: 60px; text-align:center; color:#FF4444;">⚠️ {fp_advice["status"]}</div>'
+        
         html += '</div>'
         st.markdown(html, unsafe_allow_html=True)
