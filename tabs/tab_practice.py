@@ -447,7 +447,7 @@ def render_practice_tab(lang):
             "edge_label": "Edge Advantage" if not is_cn else "优势概率",
             "insufficient": "DEPTH INSUFFICIENT..." if not is_cn else "序列深度不足...",
             # 🟢 锁定方案：迷雾区提示
-            "miss": "走势进入“迷雾区”，数据库建议规避风险。" if is_cn else "Pattern entered the 'Fog Zone'. AI suggests risk avoidance.",
+            "miss": "走势进入“迷雾区”，AI建议规避风险。" if is_cn else "Pattern entered the 'Fog Zone'. AI suggests risk avoidance.",
         }
 
         # 2. 状态逻辑初始化 (必须在 HTML 拼接前完成)
