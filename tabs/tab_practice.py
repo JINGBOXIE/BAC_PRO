@@ -20,8 +20,15 @@ from modules.ui_components import render_casino_table, render_bias_panel, render
 from core.sbi_full_model import compute_sbi_ev_from_counts
 from core.snapshot_engine import get_fp_components
 from core.db_adapter import RedisAdapter, generate_fp_hash 
+
 def render_practice_tab(lang):
-    # 临时代码：强制清除旧连接（运行一次后请删除）
+    # --- 1. 必须放在函数的第一行，确保任何地方引用它都不会报错 ---
+    if 'marker_mode' not in st.session_state:
+        st.session_state.marker_mode = False
+    
+    if 'styled_results' not in st.session_state:
+        st.session_state.styled_results = []
+
 
     # --- 1. 样式扁平化处理 (杜绝 Markdown 干扰) ---
     # 显式使用深色背景 (#0a141e) 和 纯白文字 (#FFFFFF)
@@ -50,7 +57,15 @@ def render_practice_tab(lang):
 """, unsafe_allow_html=True)
     
     def handle_deal_click():
-        # 获取当前下注额
+        """
+        终极锁定版：物理隔离 Redis 延迟，
+        并强制将数据库 Action 转换为 S/C 单字符存入路单。
+        """
+        # 1. 确保基础列表存在
+        if 'styled_results' not in st.session_state: st.session_state.styled_results = []
+        if 'clean_results' not in st.session_state: st.session_state.clean_results = []
+
+        # 2. 赌注计算
         bet_b = st.session_state.get("bet_input_red", 0)
         bet_p = st.session_state.get("bet_input_blue", 0)
         current_bets = {"B": int(bet_b), "P": int(bet_p), "T": 0}
@@ -58,76 +73,97 @@ def render_practice_tab(lang):
 
         if total_bet <= st.session_state.balance:
             try:
-                # 1. 执行发牌
+                # --- 🛡️ 核心锁定：发牌前快照 ---
+                raw_road_snapshot = list(st.session_state.clean_results)
+                
+                is_ai_match = False
+                current_action = None  # 转换后的单字符 (S/C)
+                adapter = st.session_state.get('redis_adapter')
+                h_min = st.session_state.get('hist_min', 3)
+                
+                # --- 🔍 AI 决策查询与强制转换 ---
+                if adapter and raw_road_snapshot:
+                    components = get_fp_components(raw_road_snapshot, h_min=h_min)
+                    state_hash = generate_fp_hash(*components)
+                    
+                    decision = adapter.get_state_decision(state_hash)
+                    if decision:
+                        is_ai_match = True
+                        # 🚀 物理转换层：不论数据库存的是 "CUT"、"CONTINUE" 还是其他，
+                        # 仅根据首字母或关键字符锁定为 S 或 C
+                        raw_val = str(decision.get('action', '')).upper()
+                        if "CU" in raw_val or raw_val == "C":
+                            current_action = "C"
+                        elif "CO" in raw_val or raw_val == "S":
+                            current_action = "S"
+                        else:
+                            current_action = "?"
+
+                # --- 🚀 执行发牌 ---
                 oc = st.session_state.dealer.deal_one_hand(st.session_state.shoe)
                 st.session_state.last_outcome_obj = oc
-                
-                # 2. 更新统计和路单
-                st.session_state.rank_counts, st.session_state.stats = update_shoe_stats(
-                    oc, st.session_state.rank_counts, st.session_state.stats
-                )
-                st.session_state.results.append(oc.winner)
-                if oc.winner in ['B', 'P']:
-                    st.session_state.clean_results.append(oc.winner)
 
-                    # --- 🚀 注入：后台 HASH 要素校验打印 ---
-                    # 获取当前滑块深度（若未定义则默认为 3）
-                    h_min = st.session_state.get('hist_min', 3)
-                    
-                    # 实时计算构成 HASH 的要素
-                    components = get_fp_components(st.session_state.clean_results, h_min=h_min)
-                    c_side, c_len, hB_f, hP_f, _ = components 
-                    state_hash = generate_fp_hash(*components)
-                
-                # 3. 财务结算
+                # --- 💰 结算 ---
                 new_bal, net_profit, _ = settle_hand(oc.winner, current_bets, st.session_state.balance)
                 st.session_state.balance = new_bal
                 
-                # 4. 记录历史
+                st.session_state.rank_counts, st.session_state.stats = update_shoe_stats(
+                    oc, st.session_state.rank_counts, st.session_state.stats
+                )
+
+                # --- 🏷️ 绑定转换后的 S/C 存入路单 ---
+                bet_res = None
+                if total_bet > 0 and oc.winner != 'T':
+                    bet_res = "win" if net_profit > 0 else "loss"
+                
+                st.session_state.results.append(oc.winner)
+                st.session_state.styled_results.append({
+                    "v": oc.winner,      
+                    "m": is_ai_match,    
+                    "r": bet_res,        
+                    "action": current_action  # 存入的已经是 S 或 C
+                })
+
+                # --- 📝 更新基准路单 ---
+                if oc.winner in ['B', 'P']:
+                    st.session_state.clean_results.append(oc.winner)
+
+                # --- 🧹 清理重置 ---
                 if total_bet > 0:
                     st.session_state.bet_history.append({
                         "hand_no": len(st.session_state.results),
                         "winner": oc.winner,
                         "net": net_profit
                     })
-
-                # 🔥 重点：在回调中直接清零，这是合法的
                 st.session_state.bet_input_red = 0
                 st.session_state.bet_input_blue = 0
 
             except IndexError:
                 st.session_state.end_shoe = True
-
     def reset_logic():
         import random
-        # 核心物理重置
-        if 'clean_results' not in st.session_state:
-            st.session_state.clean_results = []
         
-        # 确保 factory 已存在
+        # 1. 牌靴物理重置
         if 'factory' not in st.session_state:
-            from core.deal_adapter import ShoeFactory # 假设类名
+            from dealer.baccarat_dealer import ShoeFactory
             st.session_state.factory = ShoeFactory()
-
+        
         st.session_state.shoe = st.session_state.factory.create_shoe()
-        st.session_state.results = []
+        st.session_state.cut_card_at = random.randint(60, 80)
+        st.session_state.end_shoe = False
+        
+        # 2. 数据清空 (核心逻辑)
+        st.session_state.results = []           # 原始路单
+        st.session_state.clean_results = []     # 去和路单
+        st.session_state.styled_results = []    # 标记模式路单 [新]
+        st.session_state.bet_history = []       # 投注记录
+        
+        # 3. 统计指标重置
         st.session_state.stats = {"B": 0, "P": 0, "T": 0}
         st.session_state.rank_counts = {i: (128 if i == 0 else 32) for i in range(10)}
         st.session_state.last_outcome_obj = None
         
-        # 切牌线重置
-        st.session_state.cut_card_at = random.randint(60, 80)
-        st.session_state.end_shoe = False
-        
-        # 🚨 核心修改：清空当前牌靴的投注记录
-        st.session_state.bet_history = []
-        
-
-        # 🚨 必须强制赋值为空列表，不能只用 if not in
-        st.session_state.clean_results = [] 
-        st.session_state.results = []
-        
-        # 🚨 同步重置状态
+        # 4. AI 状态重置
         st.session_state.last_fp_advice = {
             "match": False, 
             "fp_id": "READY", 
@@ -135,7 +171,6 @@ def render_practice_tab(lang):
             "edge": 0.0, 
             "ev_info": {}
         }
-
     if 'bac_pro_v8_final' not in st.session_state:
         st.session_state.dealer = BaccaratDealer()
         st.session_state.factory = ShoeFactory(decks=8)
@@ -274,27 +309,41 @@ def render_practice_tab(lang):
     # 第一步：渲染牌桌（发牌图片）
     render_casino_table(st.session_state.get('last_outcome_obj'), lang=st.session_state.lang)
     # --- 2. 核心：并排按钮区 (视觉焦点 2) ---
-    st.markdown("<br>", unsafe_allow_html=True) 
+    st.markdown("<br>", unsafe_allow_html=True)
     
-    _, btn_container, _ = st.columns([1, 2, 1])
     
+        # --- 6.2 按钮区渲染 ---
+    _, btn_container, _ = st.columns([0.1, 3.8, 0.1])
     with btn_container:
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
+        is_cn = st.session_state.lang == "CN"
+        
         with c1:
-            # 使用 on_click 绑定刚才定义的函数
-            st.button(
-                lt.get("btn_deal", "发牌 (DEAL)"), 
-                use_container_width=True, 
-                type="primary", 
-                disabled=st.session_state.end_shoe,
-                on_click=handle_deal_click  # 绑定回调
-            )
-                
+            st.button(lt.get("btn_deal"), use_container_width=True, type="primary", 
+                      disabled=st.session_state.end_shoe, on_click=handle_deal_click)
         with c2:
-            if st.button(lt.get("btn_new_shoe", "洗牌 (NEW SHOE)"), use_container_width=True):
+            if st.button(lt.get("btn_new_shoe"), use_container_width=True):
                 reset_logic()
-                st.balloons()
                 st.rerun()
+        # --- 位于约 320 行附近的按钮区 ---
+        with c3:
+            is_cn = (lang == "CN")
+            label_natural = "🍃 自然模式" if is_cn else "🍃 NATURAL"
+            label_marker = "🎯 标记模式" if is_cn else "🎯 MARKER"
+            
+            # 只要步骤 1 做好了，这里 st.session_state.marker_mode 绝对存在
+            current_label = label_marker if st.session_state.marker_mode else label_natural
+            
+            # 增加视觉反馈：开启时按钮变色
+            btn_type = "primary" if st.session_state.marker_mode else "secondary"
+            
+            if st.button(current_label, use_container_width=True, type=btn_type):
+                st.session_state.marker_mode = not st.session_state.marker_mode
+                st.rerun()
+        
+        
+        
+
 
     # --- 3. 大路演示图 (视觉焦点 3 - CSS 物理擦除标签) ---
     st.markdown("""
@@ -331,30 +380,30 @@ def render_practice_tab(lang):
     # 构造 HTML：严格物理顺序 B | T | P
     # 注意：div 标签必须紧贴左侧，不要有任何前置空格或 Tab
     stats_html = f"""
-<div style="display: flex; justify-content: space-around; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 12px; margin: 10px 0; border: 1px solid #444; align-items: center;">
-<div style="text-align: center; flex: 1;">
-<div style="font-size: 0.75rem; color: #BBB; margin-bottom: 5px;">{txt_b}</div>
-<div style="display: flex; align-items: baseline; justify-content: center; gap: 6px;">
-<span style="font-size: 1.4rem; font-weight: bold; color: #FF4500;">{stats['B']}</span>
-<span style="font-size: 0.9rem; color: #FF4500CC;">({get_pct(stats['B'])})</span>
-</div>
-</div>
-<div style="text-align: center; flex: 1; border-left: 1px solid #444; border-right: 1px solid #444; padding: 0 5px;">
-<div style="font-size: 0.75rem; color: #BBB; margin-bottom: 5px;">{txt_t}</div>
-<div style="display: flex; align-items: baseline; justify-content: center; gap: 6px;">
-<span style="font-size: 1.4rem; font-weight: bold; color: #00FFAA;">{stats['T']}</span>
-<span style="font-size: 0.9rem; color: #00FFAACC;">({get_pct(stats['T'])})</span>
-</div>
-</div>
-<div style="text-align: center; flex: 1;">
-<div style="font-size: 0.75rem; color: #BBB; margin-bottom: 5px;">{txt_p}</div>
-<div style="display: flex; align-items: baseline; justify-content: center; gap: 6px;">
-<span style="font-size: 1.4rem; font-weight: bold; color: #1E90FF;">{stats['P']}</span>
-<span style="font-size: 0.9rem; color: #1E90FFCC;">({get_pct(stats['P'])})</span>
-</div>
-</div>
-</div>
-"""
+        <div style="display: flex; justify-content: space-around; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 12px; margin: 10px 0; border: 1px solid #444; align-items: center;">
+        <div style="text-align: center; flex: 1;">
+        <div style="font-size: 0.75rem; color: #BBB; margin-bottom: 5px;">{txt_b}</div>
+        <div style="display: flex; align-items: baseline; justify-content: center; gap: 6px;">
+        <span style="font-size: 1.4rem; font-weight: bold; color: #FF4500;">{stats['B']}</span>
+        <span style="font-size: 0.9rem; color: #FF4500CC;">({get_pct(stats['B'])})</span>
+        </div>
+        </div>
+        <div style="text-align: center; flex: 1; border-left: 1px solid #444; border-right: 1px solid #444; padding: 0 5px;">
+        <div style="font-size: 0.75rem; color: #BBB; margin-bottom: 5px;">{txt_t}</div>
+        <div style="display: flex; align-items: baseline; justify-content: center; gap: 6px;">
+        <span style="font-size: 1.4rem; font-weight: bold; color: #00FFAA;">{stats['T']}</span>
+        <span style="font-size: 0.9rem; color: #00FFAACC;">({get_pct(stats['T'])})</span>
+        </div>
+        </div>
+        <div style="text-align: center; flex: 1;">
+        <div style="font-size: 0.75rem; color: #BBB; margin-bottom: 5px;">{txt_p}</div>
+        <div style="display: flex; align-items: baseline; justify-content: center; gap: 6px;">
+        <span style="font-size: 1.4rem; font-weight: bold; color: #1E90FF;">{stats['P']}</span>
+        <span style="font-size: 0.9rem; color: #1E90FFCC;">({get_pct(stats['P'])})</span>
+        </div>
+        </div>
+        </div>
+        """
     # 🚨 这里的关键：直接渲染，不留任何被识别为代码块的机会
     st.markdown(stats_html.strip(), unsafe_allow_html=True)
 
@@ -363,7 +412,14 @@ def render_practice_tab(lang):
 
     # 第二步：紧贴渲染 Big Road (路单)
     st.subheader(t("big_road"))
-    render_big_road(st.session_state.results)
+    # [修改点]：根据模式选择渲染数据集和模式
+    # 核心：使用 if-else 二选一，确保只调用一次函数
+    if st.session_state.get('marker_mode', False):
+            # 标注模式：传入带元数据的字典列表
+        render_big_road(st.session_state.styled_results, mode="MARKER")
+    else:
+            # 自然模式：传入原始字符串列表
+        render_big_road(st.session_state.results, mode="NATURAL")        
 
     st.divider()
 
