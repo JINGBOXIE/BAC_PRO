@@ -69,6 +69,15 @@ def render_practice_tab(lang):
                 st.session_state.results.append(oc.winner)
                 if oc.winner in ['B', 'P']:
                     st.session_state.clean_results.append(oc.winner)
+
+                    # --- 🚀 注入：后台 HASH 要素校验打印 ---
+                    # 获取当前滑块深度（若未定义则默认为 3）
+                    h_min = st.session_state.get('hist_min', 3)
+                    
+                    # 实时计算构成 HASH 的要素
+                    components = get_fp_components(st.session_state.clean_results, h_min=h_min)
+                    c_side, c_len, hB_f, hP_f, _ = components 
+                    state_hash = generate_fp_hash(*components)
                 
                 # 3. 财务结算
                 new_bal, net_profit, _ = settle_hand(oc.winner, current_bets, st.session_state.balance)
@@ -88,7 +97,6 @@ def render_practice_tab(lang):
 
             except IndexError:
                 st.session_state.end_shoe = True
-    # tabs/tab_practice.py
 
     def reset_logic():
         import random
@@ -139,6 +147,25 @@ def render_practice_tab(lang):
 
 # --- 5. 侧边栏 (请确保此行相对于函数定义有正确的缩进) ---
     with st.sidebar:
+        # --- 补回 hist_min 调节功能（中英文适配版 - 极简布局） ---
+        st.divider()
+
+        # 1. 定义多语言文本
+        is_cn = st.session_state.get('lang', 'EN') == "CN"
+        ui_title = "⚙️  AI指纹 深度配置▒" if is_cn else "⚙️  AI FINGERPRINT CONFIG▒"
+        ui_help = "调节该值会改变AI🫆截取的历史数据范围" if is_cn else "Adjusts the historical data range for AI🫆 generation."
+        # 2. 标题与帮助提示并排显示
+        st.markdown(f"**{ui_title}**", help=ui_help)
+
+        # 3. 绑定滑块 (label 设为空字符串以取消显示)
+        st.session_state.hist_min = st.sidebar.slider(
+            label="", 
+            min_value=1, 
+            max_value=12, 
+            value=st.session_state.get('hist_min', 3),
+            key="hist_min_slider"
+        )
+
         # --- 5.A 顶部：下注区分割线 (中英双语) ---
         divider_text = "BETTING ZONE" if st.session_state.lang == "EN" else "下注区"
         st.markdown(f"""
@@ -379,12 +406,12 @@ def render_practice_tab(lang):
     with col_left:
         # 1. 语言与标签初始化
         is_cn = st.session_state.get('lang', 'CN') == "CN"
-        label_theoretical = "权重分布模型 (SBI)" if is_cn else "RANK Distribution Model(SBI)"
-        label_historical = "熵值指纹模型" if is_cn else "Entropy Fingerprinting Model"
+        label_theoretical = "权重分布模型" if is_cn else "RANK DISTRIBUTION MODEL"
+        label_historical = "熵值指纹模型" if is_cn else "ENTROPY FINGERPRINT MODEL"
         label_init = "【初始状态】已就绪" if is_cn else "[INITIAL STATE] Ready"
         label_miss = "牌组序列呈现随机游走，无显著 EV 信号。"
         label_miss_en = "Card sequence shows a random walk; no significant EV signal detected."
-        display_title = "🎯 双核算牌引擎追踪" if is_cn else "🎯 DUAL-CORE RANK-BIAS ENGINE TRACKING"
+        display_title = "🎯 双核引擎算牌追踪" if is_cn else "🎯 DUAL-CORE RANK-BIAS TRACKING"
         
         # 2. Redis 连接检查 (已在 main.py 统一定义，此处仅引用)
         use_cloud = st.secrets.get("USE_CLOUD_REDIS", False)
@@ -441,7 +468,7 @@ def render_practice_tab(lang):
         is_cn = st.session_state.get('lang', 'CN') == 'CN'
         lang_map = {
             # 🟢 锁定方案：格阵指纹 (Grid-ID)
-            "title": "🔍 AI 格阵指纹扫描" if is_cn else "🔍 AI Pattern Fingerprint SCANNING",
+            "title": "🔍 AI 点阵指纹扫描" if is_cn else "🔍 AI PATTERN RECOGNITION",
             "waiting": "Waiting for data..." if not is_cn else "等待数据中...",
             "action_label": "Best Action" if not is_cn else "最优决策",
             "edge_label": "Edge Advantage" if not is_cn else "优势概率",
