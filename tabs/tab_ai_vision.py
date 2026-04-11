@@ -21,14 +21,16 @@ def call_vision_ai(image_file, prompt_text):
     AI 视觉识别核心函数：从 Secrets 安全获取配置并执行 Gemini 视觉分析
     """
     try:
-        # 1. 安全配置 API Key
-        # 严格从 Streamlit Secrets 读取，不再保留任何明文 Key 字符串
         api_key = st.secrets.get("GOOGLE_API_KEY")
         
         if not api_key:
-            return "ERROR: GOOGLE_API_KEY not found in secrets.toml"
+            return "ERROR: GOOGLE_API_KEY not found"
             
+        # 🚀 强力清洗：去除所有可能的换行符、空格及隐藏字符
+        api_key = api_key.strip().replace("\n", "").replace("\r", "")
+        
         genai.configure(api_key=api_key)
+    
         
         # 2. 动态寻找可用模型 (解决模型版本更新导致的 404 问题)
         final_model_name = "gemini-1.5-flash" # 默认保底模型
@@ -129,8 +131,10 @@ def render_ai_vision_tab(lang):
     input_image = uploaded_file or camera_file
 
     if input_image:
-        st.image(input_image, caption="Input Source", use_container_width=True)
-        if st.button(ui_text["btn_run"], type="primary", use_container_width=True):
+        st.image(input_image, caption="Input Source", width="stretch")
+        #st.image(input_image, caption="Input Source", use_container_width=True)
+        if st.button(ui_text["btn_run"], type="primary", width="stretch") :
+        #if st.button(ui_text["btn_run"], type="primary", use_container_width=True):
             with st.status(ui_text["status_ai"]) as status:
                 ai_result = call_vision_ai(input_image, AI_VISION_ROLE_PROMPT)
                 
